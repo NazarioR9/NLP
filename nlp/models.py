@@ -91,7 +91,7 @@ class LightTrainingModule(nn.Module):
         self.model.to(self.device)
 
     def move_to_device(self, x, device):
-        return dict(key:val.to(device) for key,val in x.items())
+        return {key:val.to(device) for key,val in x.items()}
 
     def step(self, batch, step_name="train", epoch=-1):
         x, y = batch
