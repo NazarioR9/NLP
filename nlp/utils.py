@@ -32,8 +32,8 @@ def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
 
   return {'Logloss': log, 'F1': f1, 'Acc': acc}
 
-def getTokenizer(model_name):
-  return AutoTokenizer.from_pretrained(model_name, add_prefix_space=False)
+def getTokenizer(model_config, tok_name):
+  return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False)
 
 class EarlyStopping:
   def __init__(self, patience=5, mode='max'):
