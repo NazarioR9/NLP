@@ -29,7 +29,7 @@ class BaseDataset(Dataset):
     if self.loss_name == 'bce':
         y = to_categorical(y, self.c)
 
-    return text, length, y
+    return [text, length, y]
     
 
 class FastTokCollateFn:
@@ -39,25 +39,21 @@ class FastTokCollateFn:
         self.on_batch = on_batch
 
     def __call__(self, batch):
-        texts = [x[0] for x in batch]
-        labels = torch.tensor([x[-1] for x in batch])
+        batch = np.array(batch)
+
+        labels = torch.tensor(batch[:,-1])
         max_pad = self.max_tokens
 
         if self.on_batch:
-            lengths = [x[1] for x in batch]
-            max_pad = min(max(lengths), max_pad)
+            max_pad = min(max(batch[:,1]), max_pad)
         
         encoded = self.tokenizer(
-            texts, 
+            batch[:,0],
             truncation=True, 
             padding=True, 
             max_length=max_pad, 
-            return_attention_mask=True
+            return_attention_mask=True,
+            return_tensors='pt'
         )
-
-        outputs = {}
         
-        for key, val in encoded.items():
-            outputs[key] = torch.tensor(val)
-        
-        return outputs, labels
+        return encoded, labels
