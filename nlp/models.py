@@ -145,7 +145,7 @@ class LightTrainingModule(nn.Module):
                     BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
                     batch_size=self.global_config.batch_size if task=='train' else int(0.25*self.global_config.batch_size),
                     shuffle=shuffle,
-                    collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens)
+                    collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
         )
         
     @lru_cache()
