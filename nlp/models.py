@@ -105,7 +105,7 @@ class LightTrainingModule(nn.Module):
 
         loss_key = f"{step_name}_loss"
 
-        return { ("loss" if step_name == "train" else loss_key): loss.item()}, y_probs.cpu()
+        return { ("loss" if step_name == "train" else loss_key): loss.cpu()}, y_probs.cpu()
 
     def forward(self, X, *args):
         return self.model(X, *args)
@@ -118,13 +118,13 @@ class LightTrainingModule(nn.Module):
 
     def training_epoch_end(self, outputs: List[dict]):
         loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.losses['loss'].append(loss)
+        self.losses['loss'].append(loss.item())
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
         loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        self.losses['val_loss'].append(loss)
+        self.losses['val_loss'].append(loss.item())
 
         return {"val_loss": loss}
         
