@@ -6,13 +6,13 @@ from keras.utils import to_categorical
 from .utils import getTokenizer
 
 class BaseDataset(Dataset):
-  def __init__(self, df, task='train', loss_name='ce'):
+  def __init__(self, df, task='train', loss_name='ce', c=3):
     super(BaseDataset, self).__init__()
 
     self.text_col = 'text'
     self.target_col = 'label'
     self.length_col = 'length'
-    self.c = 3
+    self.c = c
     self.loss_name = loss_name
 
     self.task = task

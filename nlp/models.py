@@ -142,7 +142,7 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    BaseDataset(df, task, self.loss_name),
+                    BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
                     batch_size=self.global_config.batch_size if task=='train' else int(0.25*self.global_config.batch_size),
                     shuffle=shuffle,
                     collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens)
@@ -226,7 +226,7 @@ class Trainer:
         output, y_probs = self.module.validation_step(batch, i, epoch)
         y_probs = y_probs.detach().cpu().numpy()      
         score += [ self.get_score(batch, y_probs) ]
-        eval_probs.append(y_probs.reshape(-1, 4))
+        eval_probs.append(y_probs.reshape(-1, self.global_config.n_classes))
         outputs.append(output)
 
         self.printer.pprint(**output)
@@ -257,7 +257,7 @@ class Trainer:
 
 
   def get_score(self, batch, y_probs):
-    return evaluation(batch[-1].cpu().numpy(), y_probs)
+    return evaluation(batch[-1].cpu().numpy(), y_probs, labels=list(range(self.global_config.n_classes)))
 
   def get_mean_score(self, scores):
     keys = scores[0].keys()
