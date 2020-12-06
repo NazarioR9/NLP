@@ -57,28 +57,28 @@ class EarlyStopping:
 
 class Printer:
   def __init__(self, fold=0):
-    self.print = []
+    self._print = []
     self.fold = fold
 
   def pprint(self, **kwargs):
-    str_log = ""
+    str_log = "\r"
     for key in kwargs.keys():
       str_log += "{}: {} - ".format(key, kwargs[key])
-    self.print.append(str_log.strip(" -"))
-    self.show()
+  
+    print(str_log, end='')
 
   def update(self, epoch, losses, scores):
     str_log = "Epoch: {} - Loss: {:.5f} - ValLoss: {:.5f}".format(epoch, losses['loss'][epoch], losses['val_loss'][epoch])
     for metric_name, value in scores.items():
       str_log += ' - {}: {:.5f}'.format(metric_name, value)
 
-    self.print.append(str_log)
+    self._print.append(str_log)
 
   def show(self):
     clear_output()
 
     print("_"*100, "\nFold ", self.fold)
-    for p in self.print:
+    for p in self._print:
       print("\t" + "_" * 100)
       print("\t"+'| '+ p)
 

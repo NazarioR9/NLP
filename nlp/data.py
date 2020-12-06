@@ -13,6 +13,7 @@ class BaseDataset(Dataset):
     self.target_col = 'label'
     self.length_col = 'length'
     self.c = 3
+    self.loss_name = loss_name
 
     self.task = task
     self.df = df.reset_index(drop=True)
@@ -51,7 +52,6 @@ class FastTokCollateFn:
             truncation=True, 
             padding=True, 
             max_length=max_pad, 
-            return_special_tokens_mask=True, 
             return_attention_mask=True
         )
 

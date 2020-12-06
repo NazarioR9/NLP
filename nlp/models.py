@@ -25,13 +25,13 @@ class BaseTransformer(nn.Module):
 
     self.global_config = global_config
 
-    self.low_dropout = self.global_config.low_dropout
-    self.high_dropout = self.global_config.high_dropout
+    self._setup_model()
+
+    self.low_dropout = nn.Dropout(self.global_config.low_dropout)
+    self.high_dropout = nn.Dropout(self.global_config.high_dropout)
 
     self.l0 = nn.Linear(self.config.hidden_size, self.config.hidden_size)
     self.classifier = nn.Linear(self.config.hidden_size, self.global_config.n_classes)
-
-    self._setup_model()
 
     self._init_weights(self.l0)
     self._init_weights(self.classifier)
@@ -209,6 +209,8 @@ class Trainer:
 
         if self.global_config.scheduler: self.scheduler.step()
       self.module.zero_grad()
+
+      self.printer.pprint(**output)
     
     self.module.training_epoch_end(outputs)
 
@@ -226,6 +228,8 @@ class Trainer:
         score += [ self.get_score(batch, y_probs) ]
         eval_probs.append(y_probs.reshape(-1, 4))
         outputs.append(output)
+
+        self.printer.pprint(**output)
 
       score = self.get_mean_score(score)
       self.scores.append(score)
@@ -253,7 +257,7 @@ class Trainer:
 
 
   def get_score(self, batch, y_probs):
-    return evaluation(batch[-1].cpu().numpy().argmax(1), y_probs)
+    return evaluation(batch[-1].cpu().numpy(), y_probs)
 
   def get_mean_score(self, scores):
     keys = scores[0].keys()
