@@ -6,7 +6,7 @@ from keras.utils import to_categorical
 from .utils import getTokenizer
 
 class BaseDataset(Dataset):
-  def __init__(self, df, task='train'):
+  def __init__(self, df, task='train', loss_name='ce'):
     super(BaseDataset, self).__init__()
 
     self.text_col = 'text'
@@ -25,7 +25,10 @@ class BaseDataset(Dataset):
     length = self.df.loc[idx, self.length_col]
     y = self.df.loc[idx, self.target_col] if self.task=='train' else -1
 
-    return text, length, to_categorical(y, 4)
+    if self.loss_name == 'bce':
+        y = to_categorical(y, self.c)
+
+    return text, length, y
     
 
 class FastTokCollateFn:

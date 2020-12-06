@@ -75,10 +75,10 @@ class BaseTransformer(nn.Module):
     return x
 
 class LightTrainingModule(nn.Module):
-    def __init__(self, global_config):
+    def __init__(self, global_config, model=None):
         super().__init__()
 	
-        self.model = get_model(global_config)
+        self.model = model or BaseTransformer(global_config)
         self.loss = global_config.loss
         self.loss_name = global_config.loss_name
         self.activation = global_config.activation
@@ -96,10 +96,10 @@ class LightTrainingModule(nn.Module):
         x, y = self.move_to_device(x, self.device), y.to(self.device)
         y_probs = self.forward(x)
 
-        loss = self.loss(y_probs, y.argmax(1), epoch)
+        loss = self.loss(y_probs, y, epoch)
 
         try:
-        	y_probs = self.activation(y_probs, 1) #softmax
+        	y_probs = self.activation(y_probs, dim=1) #softmax
         except:
         	y_probs = self.activation(y_probs) #sigmoid
 
@@ -142,7 +142,7 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    BaseDataset(df, task),
+                    BaseDataset(df, task, self.loss_name),
                     batch_size=self.global_config.batch_size if task=='train' else int(0.25*self.global_config.batch_size),
                     shuffle=shuffle,
                     collate_fn=FastTokCollateFn(self.global_config.model_name, self.global_config.max_tokens)
