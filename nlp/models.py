@@ -17,7 +17,7 @@ from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager
-from .data import MentalHealthDataset, FastTokCollateFn
+from .data import BaseDataset, FastTokCollateFn
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
@@ -39,17 +39,15 @@ class BaseTransformer(nn.Module):
   def _setup_model(self):
     try:
       model_name = self.global_config.model_path
-      config_name = self.global_config.config_path
     except AttributeError:
       model_name = self.global_config.model_name
-      config_name = self.global_config.config_name
 
     if self.global_config.pretrained:
       self.model = AutoModel.from_pretrained(model_name)
-      self.config = AutoConfig.from_pretrained(global_config.model_name)
     else:
       self.model = AutoModel(model_name)
-      self.config = AutoConfig(global_config.model_name)
+
+    self.config = AutoConfig.from_pretrained(self.global_config.config_name)
 
   def _init_weights(self, layer):
     layer.weight.data.normal_(mean=0.0, std=0.02)

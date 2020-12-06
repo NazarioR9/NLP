@@ -29,8 +29,8 @@ class BaseDataset(Dataset):
     
 
 class FastTokCollateFn:
-    def __init__(self, model_name, max_tokens=100, on_batch=False):
-        self.tokenizer = getTokenizer(model_name)
+    def __init__(self, model_config_name, max_tokens=100, on_batch=False):
+        self.tokenizer = getTokenizer(model_config_name)
         self.max_tokens = max_tokens
         self.on_batch = on_batch
 
