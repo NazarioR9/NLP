@@ -259,7 +259,7 @@ class Trainer:
 
   def get_mean_score(self, scores):
     keys = scores[0].keys()
-    return dict(key:np.mean([score[key] for score in scores]) for key in keys)
+    return {key:np.mean([score[key] for score in scores]) for key in keys}
 
 
   def _save_weights(self, half_precision=False, path='models/'):
