@@ -142,7 +142,7 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    MentalHealthDataset(df, task),
+                    BaseDataset(df, task),
                     batch_size=self.global_config.batch_size if task=='train' else int(0.25*self.global_config.batch_size),
                     shuffle=shuffle,
                     collate_fn=FastTokCollateFn(self.global_config.model_name, self.global_config.max_tokens)
