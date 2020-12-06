@@ -42,19 +42,22 @@ class FastTokCollateFn:
     def __call__(self, batch):
         batch = np.array(batch)
 
-        labels = torch.tensor(batch[:,-1])
+        labels = torch.tensor(self._map_to_int(batch[:,-1]))
         max_pad = self.max_tokens
 
         if self.on_batch:
-            max_pad = min(max(batch[:,1]), max_pad)
+            max_pad = min(max(self._map_to_int(batch[:,1])), max_pad)
         
         encoded = self.tokenizer(
-            batch[:,0],
-            truncation=True, 
-            padding=True, 
-            max_length=max_pad, 
+            batch[:,0].tolist(),
+            truncation=True,
+            padding=True,
+            max_length=max_pad,
             return_attention_mask=True,
             return_tensors='pt'
         )
         
         return encoded, labels
+
+    def _map_to_int(self, x):
+        return list(map(int, x))

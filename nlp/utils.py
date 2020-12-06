@@ -126,10 +126,11 @@ class WorkplaceManager:
 
 #************---------------------******************
 class CrossValLogger:
-  def __init__(self, df, n_folds=10, oof_cv = 'cv_score.pkl', path='evals/roberta-base/'):
+  def __init__(self, df, metric_name, n_folds=10, oof_cv = 'cv_score.pkl', path='evals/roberta-base/'):
     assert df.fold.nunique()==n_folds, "Unconsistency between df.n_folds and n_folds"
 
     self.df = df.copy()
+    self.metric_name = metric_name
     self.path = path
     self.n_folds = n_folds
     self.oof_cv = oof_cv
@@ -156,7 +157,7 @@ class CrossValLogger:
     if self.score1 is None:
       eval_preds = self._retrieve_eval_preds()
       self.score1 = self._load_oof_cv_score() / self.n_folds #oof_cv_scores
-      self.score2 = evaluation(self.df.label.values, eval_preds, labels=self.df.label.unique())[0] #ovr_score
+      self.score2 = evaluation(self.df.label.values, eval_preds, labels=self.df.label.unique())[self.metric_name] #ovr_score
 
     print('OOF_CV_SCORE: {:.5f} | OVR_SCORE: {:.5f}'.format(self.score1, self.score2))
     
