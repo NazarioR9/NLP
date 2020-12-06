@@ -10,7 +10,7 @@ class Loss:
     self.loss_name = loss_name
     self.loss = {
         'ce': nn.CrossEntropyLoss(),
-        'bce': nn.BCELossWithLogits(),
+        'bce': nn.BCEWithLogitsLoss(),
         'focal': FocalLossMultiClass()
     }
 
