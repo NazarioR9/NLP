@@ -162,9 +162,9 @@ class LightTrainingModule(nn.Module):
       opt_config = self.global_config.opt_config
 
       if opt_name == 'adafactor':
-        return Adafactor(**opt_config)
+        return Adafactor(params, **opt_config)
 
-      return AdamW(**opt_config)
+      return AdamW(params, **opt_config)
 
     def _get_scheduler(self, opt):
       sch_name = self.global_config.sch_name
