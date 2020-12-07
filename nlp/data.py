@@ -25,7 +25,7 @@ class BaseDataset(Dataset):
   def __getitem__(self, idx):
     text = self.df.loc[idx, self.text_col]
     length = self.df.loc[idx, self.length_col]
-    y = self.df.loc[idx, self.target_col] if self.task=='train' else -1
+    y = self.df.loc[idx, self.target_col] if self.task=='train' else 0
 
     if self.loss_name == 'bce':
         y = to_categorical(y, self.c)
