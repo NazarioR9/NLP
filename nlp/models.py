@@ -42,12 +42,12 @@ class BaseTransformer(nn.Module):
     except AttributeError:
       model_name = self.global_config.model_name
 
+    self.config = AutoConfig.from_pretrained(self.global_config.config_name)
+
     if self.global_config.pretrained:
       self.model = AutoModel.from_pretrained(model_name)
     else:
-      self.model = AutoModel(model_name)
-
-    self.config = AutoConfig.from_pretrained(self.global_config.config_name)
+      self.model = AutoModel.from_config(self.config)
 
   def _init_weights(self, layer):
     layer.weight.data.normal_(mean=0.0, std=0.02)
