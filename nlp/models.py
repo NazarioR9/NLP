@@ -13,7 +13,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
-from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+        AutoConfig, AutoModel, AdamW, Adafactor,
+        get_linear_schedule_with_warmup,
+        get_cosine_schedule_with_warmup,
+        get_cosine_with_hard_restarts_schedule_with_warmup
+  )
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager
@@ -158,21 +163,19 @@ class LightTrainingModule(nn.Module):
 
       if opt_name == 'adafactor':
         return Adafactor(**opt_config)
-      elif opt_name == 'adamw':
-        return AdamW(**config)
 
-      return Adam(**config)
+      return AdamW(**opt_config)
 
     def _get_scheduler(self, opt):
       sch_name = self.global_config.sch_name
       sch_config = self.global_config.sch_config
 
-      if opt_name == 'cosine':
-        return get_cosine_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
-      elif opt_name == 'cosine_hard':
-        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
+      if sch_name == 'cosine':
+        return get_cosine_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
+      elif sch_name == 'cosine_hard':
+        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
 
-      return get_linear_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
+      return get_linear_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
 
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
