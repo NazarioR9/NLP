@@ -152,6 +152,28 @@ class LightTrainingModule(nn.Module):
     def total_steps(self):
         return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * self.global_config.epochs
 
+    def _get_optimizer(self, params):
+      opt_name = self.global_config.opt_name
+      opt_config = self.global_config.opt_config
+
+      if opt_name == 'adafactor':
+        return Adafactor(**opt_config)
+      elif opt_name == 'adamw':
+        return AdamW(**config)
+
+      return Adam(**config)
+
+    def _get_scheduler(self, opt):
+      sch_name = self.global_config.sch_name
+      sch_config = self.global_config.sch_config
+
+      if opt_name == 'cosine':
+        return get_cosine_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
+      elif opt_name == 'cosine_hard':
+        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
+
+      return get_linear_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **opt_config)
+
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         param_optimizer = self.model.named_parameters()
@@ -159,12 +181,9 @@ class LightTrainingModule(nn.Module):
              {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.001},
              {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.global_config.lr)
-        lr_scheduler = get_linear_schedule_with_warmup(
-                    optimizer,
-                    num_warmup_steps=self.global_config.warmup_steps,
-                    num_training_steps=self.total_steps(),
-        )
+        optimizer = self._get_optimizer(optimizer_grouped_parameters)
+        lr_scheduler = self._get_scheduler(optimizer)
+
         if self.global_config.swa: optimizer = SWA(optimizer, self.global_config.swa_start, self.global_config.swa_freq, self.global_config.swa_lr)
         return [optimizer], [{"scheduler": lr_scheduler, "interval": "step"}]
 
