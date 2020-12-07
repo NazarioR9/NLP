@@ -171,11 +171,11 @@ class LightTrainingModule(nn.Module):
       sch_config = self.global_config.sch_config
 
       if sch_name == 'cosine':
-        return get_cosine_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
+        return get_cosine_schedule_with_warmup(opt, num_training_steps=self.total_steps(), **sch_config)
       elif sch_name == 'cosine_hard':
-        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
+        return get_cosine_with_hard_restarts_schedule_with_warmup(opt, num_training_steps=self.total_steps(), **sch_config)
 
-      return get_linear_schedule_with_warmup(optimizer, num_training_steps=self.total_steps(), **sch_config)
+      return get_linear_schedule_with_warmup(opt, num_training_steps=self.total_steps(), **sch_config)
 
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
