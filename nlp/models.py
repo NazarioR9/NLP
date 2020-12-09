@@ -16,7 +16,7 @@ from torchcontrib.optim import SWA
 from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
 
 from .activation import Mish
-from .utils import evaluation, is_blackbone, Printer, WorkplaceManager
+from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
 from .data import BaseDataset, FastTokCollateFn
 
 class BaseTransformer(nn.Module):
@@ -249,11 +249,14 @@ class Trainer:
       print('[WARNINGS] Already predicted. Use "trainer.get_preds()" to obtain the preds.')
 
   def fit_one_epoch(self, epoch):
+    timer = Timer()
+
     self.train(epoch)
     if self.global_config.swa and (self.global_config.epochs-1) == epoch:
     	self.opts[0].swap_swa_sgd()
     self.evaluate(epoch) 
-    self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch])
+    
+    self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
 
   def get_preds(self):
     return self.probs

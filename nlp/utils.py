@@ -1,4 +1,5 @@
 import os, gc, random
+from time import time
 import pickle
 import numpy as np
 import pandas as pd
@@ -54,6 +55,39 @@ class EarlyStopping:
     if self.step == self.patience: 
       self.stop = True
 
+class Timer:
+  def __init__(self):
+    self.time = 0
+    self.times = []
+    self._start()
+
+  def _start(self):
+    self.time = time()
+
+  def _stop(self):
+    self.time = time()-self.time
+
+  def time():
+    return self.time
+
+  def to_string(self):
+    h,m,s = self.h_m_s()
+
+    str_time = ""
+    if h > 0: str_time += "{}:".format(h)
+    str_time += "{}:{}".format(m,s)
+
+    return str_time
+
+  def h_m_s(self):
+    t = round(self.time)
+    h = t//3600
+    m = t%3600
+    s = m%60
+    m = m//60
+
+    return h,m,s
+
 
 class Printer:
   def __init__(self, fold=0):
@@ -67,8 +101,9 @@ class Printer:
   
     print(str_log, end='')
 
-  def update(self, epoch, losses, scores):
-    str_log = "Epoch: {} - Loss: {:.5f} - ValLoss: {:.5f}".format(epoch, losses['loss'][epoch], losses['val_loss'][epoch])
+  def update(self, epoch, losses, scores, time = None):
+    str_log = "| ⏰: {time} | " if time else ""
+    str_log += "Epoch: {} - Loss: {:.5f} - ValLoss: {:.5f}".format(epoch, losses['loss'][epoch], losses['val_loss'][epoch])
     for metric_name, value in scores.items():
       str_log += ' - {}: {:.5f}'.format(metric_name, value)
 
@@ -82,8 +117,8 @@ class Printer:
       print("\t" + "_" * 100)
       print("\t"+'| '+ p)
 
-  def update_and_show(self, epoch, losses, score):
-    self.update(epoch, losses, score)
+  def update_and_show(self, epoch, losses, score, time=None):
+    self.update(epoch, losses, score, time)
     self.show()
 
 
