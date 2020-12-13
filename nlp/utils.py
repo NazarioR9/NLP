@@ -68,6 +68,7 @@ class Timer:
     self.time = time()-self.time
 
   def time():
+    self._stop()
     return self.time
 
   def to_string(self):
@@ -80,7 +81,7 @@ class Timer:
     return str_time
 
   def h_m_s(self):
-    t = round(self.time)
+    t = round(self.time())
     h = t//3600
     m = t%3600
     s = m%60
