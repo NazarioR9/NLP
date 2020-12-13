@@ -102,7 +102,7 @@ class Printer:
     print(str_log, end='')
 
   def update(self, epoch, losses, scores, time = None):
-    str_log = "| ⏰: {time} | " if time else ""
+    str_log = f"⏰: {time} | " if time else ""
     str_log += "Epoch: {} - Loss: {:.5f} - ValLoss: {:.5f}".format(epoch, losses['loss'][epoch], losses['val_loss'][epoch])
     for metric_name, value in scores.items():
       str_log += ' - {}: {:.5f}'.format(metric_name, value)
