@@ -62,14 +62,15 @@ class Timer:
     self._start()
 
   def _start(self):
-    self.time = time()
+    self._time = time()
 
   def _stop(self):
-    self.time = time()-self.time
+    self._time = time()-self._time
 
+  @property
   def time():
     self._stop()
-    return self.time
+    return self._time
 
   def to_string(self):
     h,m,s = self.h_m_s()
