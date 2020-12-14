@@ -57,7 +57,7 @@ class EarlyStopping:
 
 class Timer:
   def __init__(self):
-    self.time = 0
+    self._time = 0
     self.times = []
     self._start()
 
@@ -68,7 +68,7 @@ class Timer:
     self._time = time()-self._time
 
   @property
-  def time():
+  def time(self):
     self._stop()
     return self._time
 
