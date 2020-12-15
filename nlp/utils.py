@@ -58,14 +58,16 @@ class EarlyStopping:
 class Timer:
   def __init__(self):
     self._time = 0
-    self.times = []
+    self.is_stopped = False
     self._start()
 
   def _start(self):
     self._time = time()
 
   def _stop(self):
-    self._time = time()-self._time
+    if not self.is_stopped:
+      self.is_stopped = True
+      self._time = time()-self._time
 
   @property
   def time(self):
@@ -73,16 +75,10 @@ class Timer:
     return self._time
 
   def to_string(self):
-    h,m,s = self.h_m_s()
-
-    str_time = ""
-    if h > 0: str_time += "{}:".format(h)
-    str_time += "{}:{}".format(m,s)
-
-    return str_time
+    return "{}:{}:{}".format(*self.h_m_s())
 
   def h_m_s(self):
-    t = round(self.time())
+    t = round(self.time)
     h = t//3600
     m = t%3600
     s = m%60
