@@ -75,7 +75,7 @@ class Timer:
     return self._time
 
   def to_string(self):
-    return "{}:{}:{}".format(*self.h_m_s())
+    return "{:02d}:{:02d}:{:02d}".format(*self.h_m_s())
 
   def h_m_s(self):
     t = round(self.time)
