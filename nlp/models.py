@@ -91,6 +91,12 @@ class LightTrainingModule(nn.Module):
     def move_to_device(self, x, device):
         return {key:val.to(device) for key,val in x.items()}
 
+    def freeze(self):
+      self.model.freeze()
+
+    def unfreeze(self):
+      self.model.unfreeze()
+
     def step(self, batch, step_name="train", epoch=-1):
         x, y = batch
         x, y = self.move_to_device(x, self.device), y.to(self.device)
@@ -253,10 +259,15 @@ class Trainer:
 
     self.train(epoch)
     if self.global_config.swa and (self.global_config.epochs-1) == epoch:
-    	self.opts[0].swap_swa_sgd()
-    self.evaluate(epoch) 
+      self.opts[0].swap_swa_sgd()
+    self.evaluate(epoch)
     
     self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
+
+  def finetune_head_one_epoch(self, epoch):
+      self.module.freeze()
+      self.fit_one_epoch(epoch)
+      self.model.unfreeze()
 
   def get_preds(self):
     return self.probs
@@ -267,7 +278,6 @@ class Trainer:
   def get_mean_score(self, scores):
     keys = scores[0].keys()
     return {key:np.mean([score[key] for score in scores]) for key in keys}
-
 
   def _save_weights(self, half_precision=False, path='models/'):
     print('Saving weights ...')
