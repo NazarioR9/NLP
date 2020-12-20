@@ -267,7 +267,7 @@ class Trainer:
   def finetune_head_one_epoch(self, epoch):
       self.module.freeze()
       self.fit_one_epoch(epoch)
-      self.model.unfreeze()
+      self.module.unfreeze()
 
   def get_preds(self):
     return self.probs
