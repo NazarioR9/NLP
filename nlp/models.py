@@ -17,7 +17,7 @@ from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
-from .data import BaseDataset, FastTokCollateFn
+from .data import *
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
@@ -142,10 +142,10 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
+                    SeqClassificationDatatset(df, task, loss_name=self.loss_name, c=self.global_config.n_classes),
                     batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
                     shuffle=shuffle,
-                    collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
+                    collate_fn=SeqClassificationCollator(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
         )
         
     @lru_cache()
