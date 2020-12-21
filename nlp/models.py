@@ -156,8 +156,7 @@ class LightTrainingModule(nn.Module):
         
     @lru_cache()
     def total_steps(self):
-        epochs = self.global_config.finetune_epochs + self.global_config.epochs
-        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * epochs
+        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * self.global_config.epochs
 
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
@@ -214,7 +213,7 @@ class Trainer:
 
         self.opts[0].step()
 
-        if self.global_config.scheduler: self.scheduler.step()
+        if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
       self.module.zero_grad()
 
       self.printer.pprint(**output)
