@@ -112,8 +112,8 @@ class Printer:
 
     print("_"*100, "\nFold ", self.fold)
     for p in self._print:
-      print("\t" + "_" * 100)
-      print("\t"+'| '+ p)
+      print("_" * 100)
+      print('| '+ p)
 
   def update_and_show(self, epoch, losses, score, time=None):
     self.update(epoch, losses, score, time)
