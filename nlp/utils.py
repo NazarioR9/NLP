@@ -157,7 +157,6 @@ class WorkplaceManager:
     self._create_dirs()
 
 
-#************---------------------******************
 class CrossValLogger:
   def __init__(self, df, metric_name, n_folds=10, oof_cv = 'cv_score.pkl', path='evals/roberta-base/'):
     assert df.fold.nunique()==n_folds, "Unconsistency between df.n_folds and n_folds"

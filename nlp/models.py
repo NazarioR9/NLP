@@ -156,7 +156,8 @@ class LightTrainingModule(nn.Module):
         
     @lru_cache()
     def total_steps(self):
-        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * self.global_config.epochs
+        epochs = self.global_config.finetune_epochs + self.global_config.epochs
+        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * epochs
 
     def configure_optimizers(self):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
