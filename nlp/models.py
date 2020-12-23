@@ -181,8 +181,8 @@ class Trainer:
     self.fold = global_config.fold
 
     self._reset()
-    self._set_loaders()
     self._set_module(kwargs)
+    self._set_loaders()
     self._set_optimizers()
     self._set_logger()
 
