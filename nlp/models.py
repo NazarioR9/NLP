@@ -154,47 +154,63 @@ class LightTrainingModule(nn.Module):
                     collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
         )
         
-    @lru_cache()
-    def total_steps(self):
-        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * self.global_config.epochs
+    def total_steps(self, epochs):
+        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * epochs
 
-    def configure_optimizers(self):
+    def configure_optimizers(self, lr=None, epochs=None):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         param_optimizer = self.model.named_parameters()
         optimizer_grouped_parameters = [
              {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.001},
              {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.global_config.lr)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=lr or self.global_config.lr)
         lr_scheduler = get_linear_schedule_with_warmup(
                     optimizer,
                     num_warmup_steps=self.global_config.warmup_steps,
-                    num_training_steps=self.total_steps(),
+                    num_training_steps=self.total_steps(epochs or self.global_config.epochs),
         )
         if self.global_config.swa: optimizer = SWA(optimizer, self.global_config.swa_start, self.global_config.swa_freq, self.global_config.swa_lr)
-        return [optimizer], [{"scheduler": lr_scheduler, "interval": "step"}]
+        return [optimizer], [lr_scheduler]
 
 class Trainer:
   def __init__(self, global_config, **kwargs):
 
-    if global_config.task=='train':
-      self.best_eval = []
-      self.scores = []
-      self.best_log = np.inf
-      self.best_metric = 0
-      self.metric_name = global_config.metric_name
-      self.global_config = global_config
-      self.fold = global_config.fold
-      self.printer = Printer(global_config.fold)
-      self.module = LightTrainingModule(global_config)
-      self.opts, scheds = self.module.configure_optimizers()
-      self.scheduler = scheds[0]['scheduler']
-      self.train_dl = self.module.train_dataloader()
-      self.val_dl = self.module.val_dataloader()
-    else:
-      self.probs = None
+    self.metric_name = global_config.metric_name
+    self.global_config = global_config
+    self.fold = global_config.fold
+
+    self._reset()
+    self._set_loaders()
+    self._set_module(kwargs)
+    self._set_optimizers()
+    self._set_logger()
+
+  def _reset(self):
+    self.probs = None
+    self.best_log = np.inf
+    self.best_metric = 0
+    self.best_eval = []
+    self.scores = []
+
+  def _set_loaders(self):
+    self.train_dl = self.module.train_dataloader()
+    self.val_dl = self.module.val_dataloader()
+    self.test_dl = self.module.test_dataloader()
+
+  def _set_module(self, kwargs):
+    try:
       self.module = kwargs['module']
-      self.test_dl = self.module.test_dataloader()
+    except:
+      self.module = LightTrainingModule(self.global_config)
+
+  def _set_optimizers(self, lr=None, epochs=None):
+    self.opts, scheds = self.module.configure_optimizers(lr, epochs)
+    self.scheduler = scheds[0]
+
+  def _set_logger(self):
+    self.printer = Printer(self.global_config.fold)
+
 
   def train(self, epoch):
     self.module.train()
@@ -268,6 +284,22 @@ class Trainer:
       self.module.freeze()
       self.fit_one_epoch(epoch)
       self.module.unfreeze()
+
+  def fit(self, epochs=None, reset_opt=True):
+    epochs = epochs or self.global_config.epochs
+    head_epochs = self.global_config.finetune_epochs
+
+    if reset_opt: self._set_optimizers()
+
+    for epoch in range(epochs):
+      self.fit_one_epoch(epoch + head_epochs)
+
+  def finetune(self):
+    self._set_optimizers(self.global_config.head_lr)
+
+    self.module.freeze()
+    self.fit(self.global_config.finetune_epochs, reset_opt=False)
+    self.module.unfreeze()
 
   def get_preds(self):
     return self.probs

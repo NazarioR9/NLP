@@ -3,7 +3,7 @@ from torch.nn.modules.loss import _Loss
 from catalyst.contrib.nn.criterion.focal import FocalLossMultiClass
 
 class Loss:
-  def __init__(self, loss_name, switch = 3):
+  def __init__(self, loss_name, switch = -1):
 
     self.counter = 0
     self.switch = switch
@@ -16,7 +16,7 @@ class Loss:
 
   def __call__(self, pred, target, epoch=0):
     loss = self.loss[self.loss_name]
-    if epoch > self.switch:
+    if self.switch != -1 and epoch > self.switch:
       loss = self.loss['focal']
       
     self.counter += 1
