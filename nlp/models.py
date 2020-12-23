@@ -287,12 +287,12 @@ class Trainer:
 
   def fit(self, epochs=None, reset_opt=True):
     epochs = epochs or self.global_config.epochs
-    head_epochs = self.global_config.finetune_epochs
+    add = len(self.scores)
 
     if reset_opt: self._set_optimizers()
 
     for epoch in range(epochs):
-      self.fit_one_epoch(epoch + head_epochs)
+      self.fit_one_epoch(epoch + add)
 
   def finetune(self):
     self._set_optimizers(self.global_config.head_lr)
