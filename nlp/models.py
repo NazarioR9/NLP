@@ -208,6 +208,13 @@ class Trainer:
     self.opts, scheds = self.module.configure_optimizers(lr, epochs)
     self.scheduler = scheds[0]
 
+  def _change_lr(self, lr=None):
+    lr = lr or self.global_config.lr
+
+    for opt in self.opts:
+      for param_group in opt.param_groups:
+        param_group['lr'] = lr
+
   def _set_logger(self):
     self.printer = Printer(self.global_config.fold)
 
@@ -285,20 +292,18 @@ class Trainer:
       self.fit_one_epoch(epoch)
       self.module.unfreeze()
 
-  def fit(self, epochs=None, reset_opt=True):
+  def fit(self, epochs=None, lr=None, reset_lr=True):
     epochs = epochs or self.global_config.epochs
     add = len(self.scores)
 
-    if reset_opt: self._set_optimizers()
+    if reset_lr: self.change_lr(lr)
 
     for epoch in range(epochs):
       self.fit_one_epoch(epoch + add)
 
   def finetune(self):
-    self._set_optimizers(self.global_config.head_lr)
-
     self.module.freeze()
-    self.fit(self.global_config.finetune_epochs, reset_opt=False)
+    self.fit(self.global_config.finetune_epochs, lr=self.global_config.head_lr)
     self.module.unfreeze()
 
   def get_preds(self):
