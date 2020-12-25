@@ -82,7 +82,7 @@ class Timer:
     s = t%60
     m = t//60
 
-    return h,m,s
+    return m,s
 
 
 class Printer:
