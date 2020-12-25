@@ -75,14 +75,12 @@ class Timer:
     return self._time
 
   def to_string(self):
-    return "{:02d}:{:02d}:{:02d}".format(*self.h_m_s())
+    return "{:02d}:{:02d}".format(*self.m_s())
 
-  def h_m_s(self):
+  def m_s(self):
     t = round(self.time)
-    h = t//3600
-    m = t%3600
-    s = m%60
-    m = m//60
+    s = t%60
+    m = t//60
 
     return h,m,s
 
@@ -100,7 +98,7 @@ class Printer:
     print(str_log, end='')
 
   def update(self, epoch, losses, scores, time = None):
-    str_log = f"⏰: {time} | " if time else ""
+    str_log = f"⏰ {time} | " if time else ""
     str_log += "Epoch: {} - Loss: {:.5f} - ValLoss: {:.5f}".format(epoch, losses['loss'][epoch], losses['val_loss'][epoch])
     for metric_name, value in scores.items():
       str_log += ' - {}: {:.5f}'.format(metric_name, value)
