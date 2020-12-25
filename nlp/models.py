@@ -296,7 +296,7 @@ class Trainer:
     epochs = epochs or self.global_config.epochs
     add = len(self.scores)
 
-    if reset_lr: self.change_lr(lr)
+    if reset_lr: self._change_lr(lr)
 
     for epoch in range(epochs):
       self.fit_one_epoch(epoch + add)
