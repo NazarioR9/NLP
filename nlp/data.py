@@ -21,30 +21,26 @@ class BaseDataset(Dataset):
     return self.df.shape[0]
 
 class SeqClassificationDatatset(BaseDataset):
-  def __init__(self, df, task='train', aug=None, loss_name='ce', c=3):
+  def __init__(self, df, task='train', aug=None, c=3):
     super(SeqClassificationDatatset, self).__init__(df, task, aug)
 
     self.text_col = 'text'
     self.target_col = 'label'
     self.c = c
-    self.loss_name = loss_name
 
   def __getitem__(self, idx):
     text = self.df.loc[idx, self.text_col]
     length = self.df.loc[idx, self.length_col]
-    y = self.df.loc[idx, self.target_col] if self.task=='train' else 0
+    y = self.df.loc[idx, self.target_col] if self.task!='test' else 0
 
     if self.aug:
         text = aug([text])
 
-    if self.loss_name == 'bce':
-        y = to_categorical(y, self.c)
-
     return [text, length, y]
 
-class SeqToSeqDataset(BaseDataset):
+class Seq2SeqDataset(BaseDataset):
     def __init__(self, df, task='train', aug=None):
-        super(SeqToSeqDataset, self).__init__(df, task, aug)
+        super(Seq2SeqDataset, self).__init__(df, task, aug)
 
         self.src_text = 'src_text'
         self.trg_text = 'trg_text'
@@ -104,9 +100,9 @@ class SeqClassificationCollator(BaseFastCollator):
         
         return encoded, labels
 
-class SeqToSeqCollator(BaseFastCollator):
+class Seq2SeqCollator(BaseFastCollator):
     def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False):
-        super(SeqToSeqCollator, self).__init__(model_config, tok_name, max_tokens, on_batch)
+        super(Seq2SeqCollator, self).__init__(model_config, tok_name, max_tokens, on_batch)
 
     def __call__(self, batch):
         batch = super().__call__(batch)

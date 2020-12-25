@@ -13,74 +13,91 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
-from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+    AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup,
+    AutoModelForSequenceClassification, AutoModelForSeq2SeqLM,
+)
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
 from .data import *
 
-class BaseTransformer(nn.Module):
+class Transformer(nn.Module):
+  _task = 'pretraining'
+  _model_name = ''
+  _auto_loader = AutoModel
+
   def __init__(self, global_config, **kwargs):
-    super(BaseTransformer, self).__init__()
+    super(Transformer, self).__init__()
 
-    self.global_config = global_config
+    self._setup_model(global_config)
 
-    self._setup_model()
-
-    self.low_dropout = nn.Dropout(self.global_config.low_dropout)
-    self.high_dropout = nn.Dropout(self.global_config.high_dropout)
-
-    self.l0 = nn.Linear(self.config.hidden_size, self.config.hidden_size)
-    self.classifier = nn.Linear(self.config.hidden_size, self.global_config.n_classes)
-
-    self._init_weights(self.l0)
-    self._init_weights(self.classifier)
-
-  def _setup_model(self):
+  def _setup_model(self, gconfig):
     try:
-      model_name = self.global_config.model_path
+      self.model_name = gconfig.model_path
     except AttributeError:
-      model_name = self.global_config.model_name
+      self.model_name = gconfig.model_name
 
-    self.config = AutoConfig.from_pretrained(self.global_config.config_name)
+    config_args = dict(pretrained_model_name_or_path=self.gconfig.config_name)
+    if _task = 'classification':
+      config_args['num_labels'] = gconfig.num_labels
 
-    if self.global_config.pretrained:
-      self.model = AutoModel.from_pretrained(model_name)
+    self.config = AutoConfig.from_pretrained(**config_args)
+
+    if gconfig.pretrained:
+      self.model = self._auto_loader.from_pretrained(self.model_name, config=self.config)
     else:
-      self.model = AutoModel.from_config(self.config)
+      self.model = self._auto_loader.from_config(self.config)
 
-  def _init_weights(self, layer):
-    layer.weight.data.normal_(mean=0.0, std=0.02)
-    if layer.bias is not None:
-      layer.bias.data.zero_()
+  def base_model(self):
+    retrun self.model.base_model()
 
   def freeze(self):
-    for child in self.model.children():
+    for child in self.base_model().children():
       for param in child.parameters():
         param.requires_grad = False
 
   def unfreeze(self):
-    for child in self.model.children():
+    for child in self.base_model().children():
       for param in child.parameters():
         param.requires_grad = True
 
-  def forward(self, inputs):
-    outputs = self.model(**inputs)
-    x = outputs[0][:, 0, :]
+  def forward(self, inputs, labels):
+    outputs = self.model(**inputs, labels=labels)
+    return outputs
 
-    x = self.l0(self.low_dropout(x))
-    x = torch.tanh(x)
-    x = self.classifier(self.high_dropout(x))
+class SeqClassificationTransformer(Transformer):
+  _task = 'seqClassification'
+  _auto_loader = AutoModelForSequenceClassification
 
-    return x
+  def __init__(self, global_config, **kwargs):
+    super(SeqClassificationTransformer, self).__init__(global_config, **kwargs)
+
+  def forward(self, inputs, labels):
+    outputs = super().forward(inputs, labels)
+    return outputs
+
+class Seq2SeqTransformer(Transformer):
+  _task = 'seq2Seq'
+  _auto_loader = AutoModelForSeq2SeqLM
+
+  def __init__(self, global_config, **kwargs):
+    super(Seq2SeqTransformer, self).__init__(global_config, **kwargs)
+
+  def forward(self, inputs, labels):
+    outputs = super().forward(inputs, labels)
+    return outputs
 
 class LightTrainingModule(nn.Module):
-    def __init__(self, global_config, model=None):
+    _dataset_class = None
+    _collator_class = None
+    _tranformer_class = None
+
+    def __init__(self, global_config, model=None, augs={}):
         super().__init__()
 	
-        self.model = model or BaseTransformer(global_config)
-        self.loss = global_config.loss
-        self.loss_name = global_config.loss_name
+        self.augs = augs
+        self.model = model or self._tranformer_class(global_config)
         self.activation = global_config.activation
         self.global_config = global_config
         self.losses = {'loss': [], 'val_loss': []}
@@ -88,8 +105,10 @@ class LightTrainingModule(nn.Module):
 
         self.model.to(self.device)
 
-    def move_to_device(self, x, device):
-        return {key:val.to(device) for key,val in x.items()}
+    def move_to_device(self, x):
+      if isinstanceof(x, dict):
+        return {key:val.to(self.device) for key,val in x.items()}
+      return x.to(self.device)
 
     def freeze(self):
       self.model.freeze()
@@ -97,23 +116,22 @@ class LightTrainingModule(nn.Module):
     def unfreeze(self):
       self.model.unfreeze()
 
-    def step(self, batch, step_name="train", epoch=-1):
+    def step(self, batch, phase="train", epoch=-1):
         x, y = batch
-        x, y = self.move_to_device(x, self.device), y.to(self.device)
-        y_probs = self.forward(x)
+        x, y = self.move_to_device(x), self.move_to_device(y)
+        outputs = self.forward(x, y)
 
-        loss = self.loss(y_probs, y, epoch)
+        loss = outputs.loss
+        y_probs = outputs.logits
 
         try:
         	y_probs = self.activation(y_probs, dim=1) #softmax
         except:
         	y_probs = self.activation(y_probs) #sigmoid
 
-        loss_key = f"{step_name}_loss"
+        return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, y_probs.cpu()
 
-        return { ("loss" if step_name == "train" else loss_key): loss.cpu()}, y_probs.cpu()
-
-    def forward(self, X, *args):
+    def forward(self, x, *args):
         return self.model(X, *args)
 
     def training_step(self, batch, batch_idx, epoch):
@@ -141,17 +159,17 @@ class LightTrainingModule(nn.Module):
         return self.create_data_loader(self.global_config.train_df, shuffle=True)
 
     def val_dataloader(self):
-        return self.create_data_loader(self.global_config.val_df)
+        return self.create_data_loader(self.global_config.val_df, 'val')
 
     def test_dataloader(self):
         return self.create_data_loader(self.global_config.test_df, 'test')
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    SeqClassificationDatatset(df, task, loss_name=self.loss_name, c=self.global_config.n_classes),
-                    batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
+                    self._dataset_class(df, task, aug=self.augs.get(task, None), c=self.global_config.n_classes),
+                    batch_size=self.global_config.batch_size if task!='test' else int(0.5*self.global_config.batch_size),
                     shuffle=shuffle,
-                    collate_fn=SeqClassificationCollator(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
+                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
         )
         
     def total_steps(self, epochs):
@@ -173,7 +191,22 @@ class LightTrainingModule(nn.Module):
         if self.global_config.swa: optimizer = SWA(optimizer, self.global_config.swa_start, self.global_config.swa_freq, self.global_config.swa_lr)
         return [optimizer], [lr_scheduler]
 
+class SeqClassificationModule(LightTrainingModule):
+    _dataset_class = SeqClassificationDatatset
+    _collator_class = SeqClassificationCollator
+    _tranformer_class = SeqClassificationTransformer
+
+class Seq2SeqModule(LightTrainingModule):
+    _dataset_class = Seq2SeqDatatset
+    _collator_class = Seq2SeqCollator
+    _tranformer_class = Seq2SeqTransformer
+
+
+############## Trainer
+
 class Trainer:
+  _module_class = None
+
   def __init__(self, global_config, **kwargs):
 
     self.metric_name = global_config.metric_name
@@ -202,7 +235,7 @@ class Trainer:
     try:
       self.module = kwargs['module']
     except:
-      self.module = LightTrainingModule(self.global_config)
+      self.module = self._module_class(self.global_config)
 
   def _set_optimizers(self, lr=None, epochs=None):
     self.opts, scheds = self.module.configure_optimizers(lr, epochs)
@@ -332,3 +365,9 @@ class Trainer:
   def save_best_eval(self, path='evals/{}/fold_{}'):
     if self.global_config.task=='train':
       np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
+
+class TrainerForSeqClassification:
+  _module_class = SeqClassificationModule
+
+class TrainerForSeq2Seq:
+  _module_class = Seq2SeqModule
