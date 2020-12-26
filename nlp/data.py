@@ -50,21 +50,22 @@ class Seq2SeqDataset(BaseDataset):
         self.aug = aug
 
     def __getitem__(self, idx):
-        row = self.df.loc[idx, [self.src_text, self.trg_text, self.src_lang, self.trg_lang, self.length_col]]
-        src_text, trg_text, src_lang, trg_lang, length = row.to_numpy().tolist()
+        row = self.df.loc[idx, [self.src_text, self.trg_text, self.src_lang, self.trg_lang]]
+        src_text, trg_text, src_lang, trg_lang = row.to_numpy().tolist()
 
         if aug:
             src_text, trg_text = aug([src_text, trg_text])
 
-        return [src_text, trg_text, src_lang, trg_lang, length]
+        return [src_text, trg_text, src_lang, trg_lang]
 
 #########################   TokCollate
 
 class BaseFastCollator:
-    def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False):
+    def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False, phase='train'):
         self.tokenizer = getTokenizer(model_config, tok_name)
         self.max_tokens = max_tokens
         self.on_batch = on_batch
+        self.phase = phase
 
     def __call__(self, batch):
         return np.array(batch)
@@ -72,13 +73,13 @@ class BaseFastCollator:
     def _map_to_int(self, x):
         return list(map(int, x))
 
-    def encode(self, texts, max_pad):
+    def _encode(self, texts, max_pad, padding=True, truncation=True, return_attention_mask=True):
         return self.tokenizer(
             texts,
-            truncation=True,
-            padding=True,
+            truncation=truncation,
+            padding=padding,
             max_length=max_pad,
-            return_attention_mask=True,
+            return_attention_mask=return_attention_mask,
             return_tensors='pt'
         )
 
@@ -93,20 +94,40 @@ class SeqClassificationCollator(BaseFastCollator):
         if self.on_batch:
             max_pad = min(max(self._map_to_int(batch[:,1])), max_pad)
         
-        encoded = self.encode(batch[:,0].tolist(), max_pad)
+        encoded = self._encode(batch[:,0].tolist(), max_pad)
         
         return encoded, labels
+
 
 class Seq2SeqCollator(BaseFastCollator):
     def __call__(self, batch):
         batch = super().__call__(batch)
 
-        max_pad = self.max_tokens
+        src = batch[:,0].tolist()
 
-        if self.on_batch:
-            max_pad = min(max(self._map_to_int(batch[:,-1])), max_pad)
-        
-        src_encoded = self.encode(batch[:,0].tolist(), max_pad)
-        trg_encoded = self.encode(batch[:,1].tolist(), max_pad)
-        
-        return src_encoded, trg_encoded
+        if self.phase != 'test':
+
+            trg = batch[:,1].tolist()
+            raw_texts = {'src': src, 'trg': trg}
+
+            if hasattr(self.tokenizer, "prepare_seq2seq_batch"):
+                batch =  self.encode(src, trg)
+            else:
+                batch = self._encode(src, max_pad=None, padding='longest')
+                trg_encoded = self._encode(trg, max_pad=None, padding='longest')
+
+                batch.update({"labels": trg_encoded['input_ids']})
+            
+            return batch, raw_texts
+        else:
+            return self._encode(src, max_pad=None, padding='longest')
+
+    def encode(self, src_texts, trg_texts):
+        batch_encoding = self.tokenizer.prepare_seq2seq_batch(
+            src_texts,
+            tgt_texts=trg_texts,
+            padding="longest",
+            return_tensors="pt"
+        )
+
+        return batch_encoding.data

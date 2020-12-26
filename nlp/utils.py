@@ -7,6 +7,7 @@ from sklearn.metrics import log_loss, f1_score, accuracy_score
 from collections import Counter
 from IPython.display import clear_output
 import torch
+from sacrebleu import corpus_bleu
 from transformers import (
     AutoTokenizer, RobertaTokenizerFast, 
     BertTokenizerFast, ElectraTokenizerFast
@@ -25,7 +26,22 @@ def seed_everything(seed):
 
 def is_blackbone(n):
   return n.startswith('model')
+
+def calculate_bleu(refs_lns, output_lns, **kwargs):
+  """
+  Uses sacrebleu's corpus_bleu implementation.
+  From HF:
+  https://github.com/huggingface/transformers/blob/61443cd7d917ef323a799ee27bb4abc4344f0d11/examples/seq2seq/utils.py#L75
+  """
+  return round(corpus_bleu(output_lns, [refs_lns], **kwargs).score, 4)
   
+def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
+  log = log_loss(ytrue, y_pred, labels=labels)
+  f1 = f1_score(ytrue, y_pred.argmax(1), average='weighted')
+  acc = accuracy_score(ytrue, y_pred.argmax(1))
+
+  return {'Logloss': log, 'F1': f1, 'Acc': acc}
+
 def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
   log = log_loss(ytrue, y_pred, labels=labels)
   f1 = f1_score(ytrue, y_pred.argmax(1), average='weighted')

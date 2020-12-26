@@ -31,12 +31,13 @@ class Transformer(nn.Module):
     super(Transformer, self).__init__()
 
     self._setup_model(global_config)
+    self._setup_tok(global_config.config_name)
 
   def _setup_model(self, gconfig):
     try:
-      self.model_name = gconfig.model_path
+      self._model_name = gconfig.model_path
     except AttributeError:
-      self.model_name = gconfig.model_name
+      self._model_name = gconfig.model_name
 
     config_args = dict(pretrained_model_name_or_path=gconfig.config_name)
     if self._task == 'seqClassification':
@@ -45,9 +46,12 @@ class Transformer(nn.Module):
     self.config = AutoConfig.from_pretrained(**config_args)
 
     if gconfig.pretrained:
-      self.model = self._auto_loader.from_pretrained(self.model_name, config=self.config)
+      self.model = self._auto_loader.from_pretrained(self._model_name, config=self.config)
     else:
       self.model = self._auto_loader.from_config(self.config)
+
+  def _setup_tok(self, tok_name):
+    self.tokenizer = getTokenizer(self.config, tok_name):
 
   def base_model(self):
     return self.model.base_model
@@ -111,19 +115,7 @@ class LightTrainingModule(nn.Module):
       self.model.unfreeze()
 
     def step(self, batch, phase="train", epoch=-1):
-        x, y = batch
-        x, y = self.move_to_device(x), self.move_to_device(y)
-        outputs = self.forward(x, y)
-
-        loss = outputs.loss
-        y_probs = outputs.logits
-
-        try:
-        	y_probs = self.activation(y_probs, dim=1) #softmax
-        except:
-        	y_probs = self.activation(y_probs) #sigmoid
-
-        return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, y_probs.cpu()
+        pass
 
     def forward(self, x, *args):
         return self.model(x, *args)
@@ -160,7 +152,7 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    self._dataset_class(df, task, aug=self.augs.get(task, None), c=self.global_config.n_classes),
+                    self._dataset_class(df, task, aug=self.augs.get(task, None), c=self.global_config.num_labels),
                     batch_size=self.global_config.batch_size if task!='test' else int(0.5*self.global_config.batch_size),
                     shuffle=shuffle,
                     collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
@@ -190,10 +182,46 @@ class SeqClassificationModule(LightTrainingModule):
     _collator_class = SeqClassificationCollator
     _tranformer_class = SeqClassificationTransformer
 
+    def step(self, batch, phase="train", epoch=-1):
+        x, y = batch
+        x, y = self.move_to_device(x), self.move_to_device(y)
+        outputs = self.forward(x, y)
+
+        loss = outputs['loss']
+        y_probs = outputs['logits']
+
+        try:
+          y_probs = self.activation(y_probs, dim=1) #softmax
+        except:
+          y_probs = self.activation(y_probs) #sigmoid
+
+        return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, y_probs.cpu()
+
 class Seq2SeqModule(LightTrainingModule):
     _dataset_class = Seq2SeqDataset
     _collator_class = Seq2SeqCollator
     _tranformer_class = Seq2SeqTransformer
+
+    def generate(self, batch):
+      return self.model.generate(**batch)
+
+    def step(self, batch, phase="train", epoch=-1):
+      x, raw_texts = batch
+      x = self.move_to_device(x)
+      outputs = self.forward(x)
+
+      loss = outputs['loss']
+
+      return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, None
+
+    def validation_step(self, batch, batch_idx, epoch):
+      outputs, _ = self.step(batch, "val")
+      generated_tokens = self.generate(batch)
+
+      return outputs, generated_tokens
+        
+    def test_step(self, batch, batch_idx):
+      return self.generate(batch)
 
 ############## Trainer
 
@@ -214,7 +242,6 @@ class Trainer:
 
   def _reset(self):
     self.probs = None
-    self.best_log = np.inf
     self.best_metric = 0
     self.best_eval = []
     self.scores = []
@@ -279,9 +306,12 @@ class Trainer:
 
       for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
         output, y_probs = self.module.validation_step(batch, i, epoch)
-        y_probs = y_probs.detach().cpu().numpy()      
+        y_probs = y_probs.detach().cpu().numpy()
         score += [ self.get_score(batch, y_probs) ]
-        eval_probs.append(y_probs.reshape(-1, self.global_config.n_classes))
+        try:
+          eval_probs.append(y_probs.reshape(-1, self.global_config.num_labels))
+        except:
+          eval_probs.append(y_probs)
         outputs.append(output)
 
         self.printer.pprint(**output)
@@ -289,7 +319,7 @@ class Trainer:
       score = self.get_mean_score(score)
       self.scores.append(score)
       self.module.validation_epoch_end(outputs)
-      self._check_evaluation_score(score[self.metric_name], score['Logloss'], eval_probs)
+      self._check_evaluation_score(score[self.metric_name], eval_probs)
     
   def predict(self):
     if self.probs is None:
@@ -336,7 +366,7 @@ class Trainer:
     return self.probs
 
   def get_score(self, batch, y_probs):
-    return evaluation(batch[-1].cpu().numpy(), y_probs, labels=list(range(self.global_config.n_classes)))
+    return evaluation(batch[-1].cpu().numpy(), y_probs, labels=list(range(self.global_config.num_labels)))
 
   def get_mean_score(self, scores):
     keys = scores[0].keys()
@@ -355,10 +385,9 @@ class Trainer:
     self.module.load_state_dict(torch.load(path))
     gc.collect()
 
-  def _check_evaluation_score(self, metric, log_score, best_eval=None):
+  def _check_evaluation_score(self, metric, best_eval=None):
     if metric > self.best_metric:
       self.best_metric = metric
-      self.best_log = log_score
       self.best_eval = best_eval
       self._save_weights()
 
@@ -371,3 +400,16 @@ class TrainerForSeqClassification(Trainer):
 
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
+
+  def decode(self, outputs):
+    return self.tokenizer.batch_decode(
+      outputs,
+      skip_special_tokens=True,
+      clean_up_tokenization_spaces=False
+    )
+
+  def get_score(self, batch, decoded):
+    _, raw_texts = batch
+    return {
+      'bleu': calculate_bleu(raw_texts['trg'], decoded)
+    }
