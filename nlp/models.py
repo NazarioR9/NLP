@@ -150,12 +150,12 @@ class LightTrainingModule(nn.Module):
     def test_dataloader(self):
         return self.create_data_loader(self.global_config.test_df, 'test')
                 
-    def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
+    def create_data_loader(self, df: pd.DataFrame, phase='train', shuffle=False):
         return DataLoader(
-                    self._dataset_class(df, task, aug=self.augs.get(task, None), c=self.global_config.num_labels),
-                    batch_size=self.global_config.batch_size if task!='test' else int(0.5*self.global_config.batch_size),
+                    self._dataset_class(df, phase, aug=self.augs.get(phase, None), c=self.global_config.num_labels),
+                    batch_size=self.global_config.batch_size if phase!='test' else int(0.5*self.global_config.batch_size),
                     shuffle=shuffle,
-                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch)
+                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch, phase)
         )
         
     def total_steps(self, epochs):
@@ -392,7 +392,7 @@ class Trainer:
       self._save_weights()
 
   def save_best_eval(self, path='evals/{}/fold_{}'):
-    if self.global_config.task=='train':
+    if self.global_config.phase=='train':
       np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
 
 class TrainerForSeqClassification(Trainer):

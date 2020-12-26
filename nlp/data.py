@@ -9,20 +9,20 @@ from .utils import getTokenizer
 from .augment import *
 
 class BaseDataset(Dataset):
-  def __init__(self, df, task='train', aug=None):
+  def __init__(self, df, phase='train', aug=None):
     super(BaseDataset, self).__init__()
 
     self.length_col = 'length'
     self.aug = aug
-    self.task = task
+    self.phase = phase
     self.df = df.reset_index(drop=True)
     
   def __len__(self):
     return self.df.shape[0]
 
 class SeqClassificationDataset(BaseDataset):
-  def __init__(self, df, task='train', aug=None, c=3):
-    super(SeqClassificationDataset, self).__init__(df, task, aug)
+  def __init__(self, df, phase='train', aug=None, c=3):
+    super(SeqClassificationDataset, self).__init__(df, phase, aug)
 
     self.text_col = 'text'
     self.target_col = 'label'
@@ -31,7 +31,7 @@ class SeqClassificationDataset(BaseDataset):
   def __getitem__(self, idx):
     text = self.df.loc[idx, self.text_col]
     length = self.df.loc[idx, self.length_col]
-    y = self.df.loc[idx, self.target_col] if self.task!='test' else 0
+    y = self.df.loc[idx, self.target_col] if self.phase!='test' else 0
 
     if self.aug:
         text = aug([text])
@@ -39,8 +39,8 @@ class SeqClassificationDataset(BaseDataset):
     return [text, length, y]
 
 class Seq2SeqDataset(BaseDataset):
-    def __init__(self, df, task='train', aug=None):
-        super(Seq2SeqDataset, self).__init__(df, task, aug)
+    def __init__(self, df, phase='train', aug=None):
+        super(Seq2SeqDataset, self).__init__(df, phase, aug)
 
         self.src_text = 'src_text'
         self.trg_text = 'trg_text'
