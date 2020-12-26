@@ -22,6 +22,8 @@ class BaseTransform:
 class SwitchSourceTarget(BaseTransform):
 	"""
 		Switch source text with target text.
+		Useful for Seq2Seq LM, and also
+		allow MT from src -> trg and from trg -> src. 
 	"""
 	def __init__(self, p=0.3):
 		super().__init__(p)

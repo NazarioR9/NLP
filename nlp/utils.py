@@ -82,7 +82,7 @@ class Timer:
     s = t%60
     m = t//60
 
-    return h,m,s
+    return m,s
 
 
 class Printer:
@@ -119,11 +119,11 @@ class Printer:
 
 
 class WorkplaceManager:
-  def __init__(self, seed, dirs, exts, n_fols=10):
+  def __init__(self, seed, dirs, exts, n_folds=10):
     self.seed = seed
     self.dirs = dirs
     self.exts = exts
-    self.n_folds = n_fols
+    self.n_folds = n_folds
 
     self._set_workplace()
 
@@ -153,6 +153,13 @@ class WorkplaceManager:
       self._clear_dirs()
       self._clear_files()    
     self._create_dirs()
+
+  def save_them_all(self, exclude_dirs=[], exclude_exts=[]):
+    dirs = ' '.join( list(set(self.dirs).difference(set(exclude_dirs))) )
+    exts = ' '.join( list(set(self.exts).difference(set(exclude_exts))) )
+
+    os.system(f'zip -r workplace.zip {exts} {dirs}')
+
 
 
 class CrossValLogger:

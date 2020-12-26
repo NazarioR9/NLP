@@ -20,9 +20,9 @@ class BaseDataset(Dataset):
   def __len__(self):
     return self.df.shape[0]
 
-class SeqClassificationDatatset(BaseDataset):
+class SeqClassificationDataset(BaseDataset):
   def __init__(self, df, task='train', aug=None, c=3):
-    super(SeqClassificationDatatset, self).__init__(df, task, aug)
+    super(SeqClassificationDataset, self).__init__(df, task, aug)
 
     self.text_col = 'text'
     self.target_col = 'label'
@@ -84,9 +84,6 @@ class BaseFastCollator:
 
 
 class SeqClassificationCollator(BaseFastCollator):
-    def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False):
-        super(SeqClassificationCollator, self).__init__(model_config, tok_name, max_tokens, on_batch)
-
     def __call__(self, batch):
         batch = super().__call__(batch)
 
@@ -101,9 +98,6 @@ class SeqClassificationCollator(BaseFastCollator):
         return encoded, labels
 
 class Seq2SeqCollator(BaseFastCollator):
-    def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False):
-        super(Seq2SeqCollator, self).__init__(model_config, tok_name, max_tokens, on_batch)
-
     def __call__(self, batch):
         batch = super().__call__(batch)
 
