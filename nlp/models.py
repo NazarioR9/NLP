@@ -39,7 +39,7 @@ class Transformer(nn.Module):
       self.model_name = gconfig.model_name
 
     config_args = dict(pretrained_model_name_or_path=self.gconfig.config_name)
-    if _task = 'classification':
+    if self._task == 'seqClassification':
       config_args['num_labels'] = gconfig.num_labels
 
     self.config = AutoConfig.from_pretrained(**config_args)
