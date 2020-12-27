@@ -21,7 +21,7 @@ from transformers import (
 from .activation import Mish
 from .utils import *
 from .data import *
-from sampler import SortishSampler
+from .sampler import SortishSampler
 
 class Transformer(nn.Module):
   _task = 'pretraining'
@@ -214,14 +214,15 @@ class Seq2SeqModule(LightTrainingModule):
       try:  batch.pop('labels')
       except: pass
       finally:
+        batch.update({'num_beams': self.global_config.num_beams})
         return self.model.generate(batch)
 
     def decode(self, generated):
-    return self.tokenizer.batch_decode(
-        generated,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False
-      )
+      return self.tokenizer.batch_decode(
+          generated,
+          skip_special_tokens=True,
+          clean_up_tokenization_spaces=False
+        )
 
     def step(self, batch, phase="train", epoch=-1):
       x = self.move_to_device(batch[0])
@@ -349,7 +350,7 @@ class Trainer:
       with torch.no_grad():
         for i, batch in enumerate(self.test_dl):
           _, y_probs = self.module.test_step(batch, i)
-          self.probs += y_probs.detach().cpu().numpy().tolist()
+          self.probs += [self._detach(y_probs)]
     else:
       print('[WARNINGS] Already predicted. Use "trainer.get_preds()" to obtain the preds.')
 
