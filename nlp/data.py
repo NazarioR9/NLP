@@ -9,12 +9,13 @@ from .utils import getTokenizer
 from .augment import *
 
 class BaseDataset(Dataset):
-  def __init__(self, df, phase='train', aug=None):
+  def __init__(self, df, phase='train', aug=None, c=3):
     super(BaseDataset, self).__init__()
 
     self.length_col = 'length'
     self.aug = aug
     self.phase = phase
+    self.c = c
     self.df = df.reset_index(drop=True)
     
   def __len__(self):
@@ -22,11 +23,10 @@ class BaseDataset(Dataset):
 
 class SeqClassificationDataset(BaseDataset):
   def __init__(self, df, phase='train', aug=None, c=3):
-    super(SeqClassificationDataset, self).__init__(df, phase, aug)
+    super(SeqClassificationDataset, self).__init__(df, phase, aug, c)
 
     self.text_col = 'text'
     self.target_col = 'label'
-    self.c = c
 
   def __getitem__(self, idx):
     text = self.df.loc[idx, self.text_col]
@@ -34,13 +34,13 @@ class SeqClassificationDataset(BaseDataset):
     y = self.df.loc[idx, self.target_col] if self.phase!='test' else 0
 
     if self.aug:
-        text = aug([text])
+        text = self.aug([text])
 
     return [text, length, y]
 
 class Seq2SeqDataset(BaseDataset):
-    def __init__(self, df, phase='train', aug=None):
-        super(Seq2SeqDataset, self).__init__(df, phase, aug)
+    def __init__(self, df, phase='train', aug=None, c=-1):
+        super(Seq2SeqDataset, self).__init__(df, phase, aug, c)
 
         self.src_text = 'src_text'
         self.trg_text = 'trg_text'
@@ -53,8 +53,8 @@ class Seq2SeqDataset(BaseDataset):
         row = self.df.loc[idx, [self.src_text, self.trg_text, self.src_lang, self.trg_lang]]
         src_text, trg_text, src_lang, trg_lang = row.to_numpy().tolist()
 
-        if aug:
-            src_text, trg_text = aug([src_text, trg_text])
+        if self.aug:
+            src_text, trg_text = self.aug([src_text, trg_text])
 
         return [src_text, trg_text, src_lang, trg_lang]
 
@@ -73,10 +73,10 @@ class BaseFastCollator:
     def _map_to_int(self, x):
         return list(map(int, x))
 
-    def _encode(self, texts, max_pad, padding=True, truncation=True, return_attention_mask=True):
+    def _encode(self, texts, max_pad=None, padding=True, return_attention_mask=True):
         return self.tokenizer(
             texts,
-            truncation=truncation,
+            truncation=max_pad is not None,
             padding=padding,
             max_length=max_pad,
             return_attention_mask=return_attention_mask,
@@ -88,15 +88,15 @@ class SeqClassificationCollator(BaseFastCollator):
     def __call__(self, batch):
         batch = super().__call__(batch)
 
-        labels = torch.tensor(self._map_to_int(batch[:,-1]))
         max_pad = self.max_tokens
 
         if self.on_batch:
             max_pad = min(max(self._map_to_int(batch[:,1])), max_pad)
         
         encoded = self._encode(batch[:,0].tolist(), max_pad)
+        encode.update({'labels': torch.tensor(self._map_to_int(batch[:,-1]))})
         
-        return encoded, labels
+        return encoded
 
 
 class Seq2SeqCollator(BaseFastCollator):
@@ -113,20 +113,22 @@ class Seq2SeqCollator(BaseFastCollator):
             if hasattr(self.tokenizer, "prepare_seq2seq_batch"):
                 batch =  self.encode(src, trg)
             else:
-                batch = self._encode(src, max_pad=None, padding='longest')
-                trg_encoded = self._encode(trg, max_pad=None, padding='longest')
+                batch = self._encode(src, max_pad=self.max_tokens)
+                trg_encoded = self._encode(trg, max_pad=max_tokens)
 
                 batch.update({"labels": trg_encoded['input_ids']})
             
             return batch, raw_texts
         else:
-            return self._encode(src, max_pad=None, padding='longest')
+            return self._encode(src, max_pad=None, truncation=False)
 
     def encode(self, src_texts, trg_texts):
         batch_encoding = self.tokenizer.prepare_seq2seq_batch(
             src_texts,
             tgt_texts=trg_texts,
-            padding="longest",
+            padding=True,
+            truncation= self.max_tokens is not None,
+            max_length = self.max_tokens,
             return_tensors="pt"
         )
 

@@ -19,8 +19,9 @@ from transformers import (
 )
 
 from .activation import Mish
-from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
+from .utils import *
 from .data import *
+from sampler import SortishSampler
 
 class Transformer(nn.Module):
   _task = 'pretraining'
@@ -31,7 +32,6 @@ class Transformer(nn.Module):
     super(Transformer, self).__init__()
 
     self._setup_model(global_config)
-    self._setup_tok(global_config.config_name)
 
   def _setup_model(self, gconfig):
     try:
@@ -50,9 +50,6 @@ class Transformer(nn.Module):
     else:
       self.model = self._auto_loader.from_config(self.config)
 
-  def _setup_tok(self, tok_name):
-    self.tokenizer = getTokenizer(self.config, tok_name):
-
   def base_model(self):
     return self.model.base_model
 
@@ -66,30 +63,28 @@ class Transformer(nn.Module):
       for param in child.parameters():
         param.requires_grad = True
 
-  def forward(self, inputs, labels):
-    outputs = self.model(**inputs, labels=labels)
+  def forward(self, inputs):
+    outputs = self.model(**inputs)
     return outputs
 
 class SeqClassificationTransformer(Transformer):
   _task = 'seqClassification'
   _auto_loader = AutoModelForSequenceClassification
 
-  def forward(self, inputs, labels):
-    outputs = super().forward(inputs, labels)
-    return outputs
 
 class Seq2SeqTransformer(Transformer):
   _task = 'seq2Seq'
   _auto_loader = AutoModelForSeq2SeqLM
 
-  def forward(self, inputs, labels):
-    outputs = super().forward(inputs, labels)
-    return outputs
+  def generate(self, batch):
+    return self.model.generate(**batch)
+
 
 class LightTrainingModule(nn.Module):
     _dataset_class = None
     _collator_class = None
     _tranformer_class = None
+    _sampler = None
 
     def __init__(self, global_config, model=None, augs={}):
         super().__init__()
@@ -101,7 +96,12 @@ class LightTrainingModule(nn.Module):
         self.losses = {'loss': [], 'val_loss': []}
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+        self._setup_tok(global_config.config_name)
+
         self.model.to(self.device)
+
+    def _setup_tok(self, tok_name):
+      self.tokenizer = getTokenizer(self.model.config, tok_name)
 
     def move_to_device(self, x):
       if isinstance(x, dict):
@@ -151,10 +151,18 @@ class LightTrainingModule(nn.Module):
         return self.create_data_loader(self.global_config.test_df, 'test')
                 
     def create_data_loader(self, df: pd.DataFrame, phase='train', shuffle=False):
+        sampler = None
+        batch_size = self.global_config.batch_size if phase!='test' else int(0.5*self.global_config.batch_size)
+
+        if self._sampler:
+          sampler = self._sampler(df['length'].values.tolist(), batch_size, shuffle)
+          shuffle = False
+
         return DataLoader(
                     self._dataset_class(df, phase, aug=self.augs.get(phase, None), c=self.global_config.num_labels),
-                    batch_size=self.global_config.batch_size if phase!='test' else int(0.5*self.global_config.batch_size),
+                    batch_size=batch_size,
                     shuffle=shuffle,
+                    sampler = sampler,
                     collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch, phase)
         )
         
@@ -183,9 +191,8 @@ class SeqClassificationModule(LightTrainingModule):
     _tranformer_class = SeqClassificationTransformer
 
     def step(self, batch, phase="train", epoch=-1):
-        x, y = batch
-        x, y = self.move_to_device(x), self.move_to_device(y)
-        outputs = self.forward(x, y)
+        batch = self.move_to_device(batch)
+        outputs = self.forward(batch)
 
         loss = outputs['loss']
         y_probs = outputs['logits']
@@ -201,24 +208,33 @@ class Seq2SeqModule(LightTrainingModule):
     _dataset_class = Seq2SeqDataset
     _collator_class = Seq2SeqCollator
     _tranformer_class = Seq2SeqTransformer
+    _sampler = SortishSampler
 
     def generate(self, batch):
-      return self.model.generate(**batch)
+      try:  batch.pop('labels')
+      except: pass
+      finally:
+        return self.model.generate(batch)
+
+    def decode(self, generated):
+    return self.tokenizer.batch_decode(
+        generated,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+      )
 
     def step(self, batch, phase="train", epoch=-1):
-      x, raw_texts = batch
-      x = self.move_to_device(x)
-      outputs = self.forward(x)
+      x = self.move_to_device(batch[0])
 
-      loss = outputs['loss']
+      loss = self.forward(x)['loss']
 
-      return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, None
+      return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, x
 
     def validation_step(self, batch, batch_idx, epoch):
-      outputs, _ = self.step(batch, "val")
-      generated_tokens = self.generate(batch)
+      outputs, x = self.step(batch, "val")
+      decoded = self.decode(self.generate(x))
 
-      return outputs, generated_tokens
+      return outputs, decoded
         
     def test_step(self, batch, batch_idx):
       return self.generate(batch)
@@ -271,6 +287,10 @@ class Trainer:
   def _set_logger(self):
     self.printer = Printer(self.global_config.fold)
 
+  def _detach(self, x):
+    if isinstance(x, torch.Tensor):
+      return x.detach().cpu().numpy()
+    return x
 
   def train(self, epoch):
     self.module.train()
@@ -306,7 +326,7 @@ class Trainer:
 
       for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
         output, y_probs = self.module.validation_step(batch, i, epoch)
-        y_probs = y_probs.detach().cpu().numpy()
+        y_probs = self._detach(y_probs)
         score += [ self.get_score(batch, y_probs) ]
         try:
           eval_probs.append(y_probs.reshape(-1, self.global_config.num_labels))
@@ -400,13 +420,6 @@ class TrainerForSeqClassification(Trainer):
 
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
-
-  def decode(self, outputs):
-    return self.tokenizer.batch_decode(
-      outputs,
-      skip_special_tokens=True,
-      clean_up_tokenization_spaces=False
-    )
 
   def get_score(self, batch, decoded):
     _, raw_texts = batch

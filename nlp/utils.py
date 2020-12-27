@@ -42,13 +42,6 @@ def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
 
   return {'Logloss': log, 'F1': f1, 'Acc': acc}
 
-def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
-  log = log_loss(ytrue, y_pred, labels=labels)
-  f1 = f1_score(ytrue, y_pred.argmax(1), average='weighted')
-  acc = accuracy_score(ytrue, y_pred.argmax(1))
-
-  return {'Logloss': log, 'F1': f1, 'Acc': acc}
-
 def getTokenizer(model_config, tok_name):
   return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False)
 
