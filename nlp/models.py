@@ -158,7 +158,7 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, phase='train', shuffle=False):
         sampler = None
-        batch_size = self.global_config.batch_size if phase!='test' else int(0.5*self.global_config.batch_size)
+        batch_size=self.global_config.batch_size
 
         if self._sampler:
           sampler = self._sampler(df['length'].values.tolist(), batch_size, shuffle)
@@ -254,7 +254,8 @@ class Seq2SeqModule(LightTrainingModule):
       return outputs, decoded
         
     def test_step(self, batch, batch_idx):
-      return self.generate(batch)
+      batch = self.move_to_device(batch)
+      return {}, self.decode(self.generate(batch))
 
 ############## Trainer
 
@@ -367,7 +368,7 @@ class Trainer:
       self.probs = []
 
       with torch.no_grad():
-        for i, batch in enumerate(self.test_dl):
+        for i, batch in enumerate(tqdm(self.test_dl, desc='Inference')):
           _, y_probs = self.module.test_step(batch, i)
           self.probs += [self._detach(y_probs)]
     else:
@@ -421,9 +422,10 @@ class Trainer:
   def load(self, path='models/'):
     if os.path.isdir(path): path = os.path.join(path, f'model_{self.fold}.bin')
 
-    print('Loading weights ...')
+    print('Loading weights ... ')
     self.module.load_state_dict(torch.load(path))
     gc.collect()
+    print('done')
 
   def _check_evaluation_score(self, metric, best_eval=None):
     if metric > self.best_metric:
@@ -431,15 +433,27 @@ class Trainer:
       self.best_eval = best_eval
       self._save_weights()
 
-  def save_best_eval(self, path='evals/{}/fold_{}'):
-    if self.global_config.phase=='train':
-      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
-
 class TrainerForSeqClassification(Trainer):
   _module_class = SeqClassificationModule
 
+  def save_best_eval(self, path='evals/{}/fold_{}_best_eval'):
+    if self.global_config.phase=='train':
+      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'.npy', np.vstack(self.best_eval))
+
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
+
+  def save_best_eval(self, path='evals/{}/fold_{}_best_eval'):
+    if self.global_config.phase=='train':
+      file = path.format(self.global_config.model_name, self.global_config.fold)+'.txt'
+      with open(file, 'w') as f:
+        for batch in self.best_eval:
+          for s in batch:
+            f.write(s+'\n')
+
+
+
+      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
 
   def get_score(self, batch, decoded):
     _, raw_texts = batch
