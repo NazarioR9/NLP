@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
 from transformers import (
-    AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup,
+    AutoConfig, AutoModel, AdamW, Adafactor, get_linear_schedule_with_warmup,
     AutoModelForSequenceClassification, AutoModelForSeq2SeqLM,
 )
 
@@ -67,6 +67,9 @@ class Transformer(nn.Module):
     outputs = self.model(**inputs)
     return outputs
 
+  def use_task_specific_params(self, pars):
+    self.model.config.update(pars)
+
 class SeqClassificationTransformer(Transformer):
   _task = 'seqClassification'
   _auto_loader = AutoModelForSequenceClassification
@@ -102,6 +105,9 @@ class LightTrainingModule(nn.Module):
 
     def _setup_tok(self, tok_name):
       self.tokenizer = getTokenizer(self.model.config, tok_name)
+
+    def use_task_specific_params(self, pars):
+      self.model.use_task_specific_params(pars)
 
     def move_to_device(self, x):
       if isinstance(x, dict):
@@ -176,7 +182,17 @@ class LightTrainingModule(nn.Module):
              {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.001},
              {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=lr or self.global_config.lr)
+
+        optimizer_kwargs = {'lr': lr or self.global_config.lr}
+
+        if self.global_config.use_adafactor:
+          optimizer_cls = Adafactor
+          optimizer_kwargs.update({"scale_parameter": False, "relative_step": False})
+        else:
+          optimizer_cls = AdamW
+
+        optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
+
         lr_scheduler = get_linear_schedule_with_warmup(
                     optimizer,
                     num_warmup_steps=self.global_config.warmup_steps,
@@ -273,6 +289,9 @@ class Trainer:
       self.module = kwargs['module']
     except:
       self.module = self._module_class(self.global_config)
+
+    if hasattr(self.global_config, 'task_specific_params'):
+      self.module.use_task_specific_params(self.global_config.task_specific_params)
 
   def _set_optimizers(self, lr=None, epochs=None):
     self.opts, scheds = self.module.configure_optimizers(lr, epochs)
