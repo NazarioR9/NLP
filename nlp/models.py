@@ -451,10 +451,6 @@ class TrainerForSeq2Seq(Trainer):
           for s in batch:
             f.write(s+'\n')
 
-
-
-      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
-
   def get_score(self, batch, decoded):
     _, raw_texts = batch
     return {
