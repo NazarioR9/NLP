@@ -1,5 +1,6 @@
 import os, gc, random
 from time import time
+from functools import lru_cache
 import pickle
 import numpy as np
 import pandas as pd
@@ -42,8 +43,10 @@ def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
 
   return {'Logloss': log, 'F1': f1, 'Acc': acc}
 
-def getTokenizer(model_config, tok_name):
-  return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False)
+@lru_cache()
+def getTokenizer(model_config, tok_name, use_fast=True):
+  if tok_name.startswith('.'): use_fast = False
+  return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False, use_fast=use_fast)
 
 class EarlyStopping:
   def __init__(self, patience=5, mode='max'):
