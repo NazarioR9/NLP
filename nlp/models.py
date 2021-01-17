@@ -386,6 +386,9 @@ class Trainer:
     
     if self.global_config.evaluate:
       self.evaluate(epoch)
+    else:
+      self._save_weights(path=f'models/checkpoint_{epoch}.bin')
+
     
     self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
 
@@ -419,9 +422,11 @@ class Trainer:
     return {key:np.mean([score[key] for score in scores]) for key in keys}
 
   def _save_weights(self, half_precision=False, path='models/'):
+    if os.path.isdir(path): path = os.path.join(path, f'model_{self.fold}.bin')
+
     print('Saving weights ...')
     if half_precision: self.module.half() #for fast inference
-    torch.save(self.module.state_dict(), f'{path}model_{self.fold}.bin')
+    torch.save(self.module.state_dict(), path)
     gc.collect()
 
   def load(self, path='models/'):
