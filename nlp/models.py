@@ -133,14 +133,14 @@ class LightTrainingModule(nn.Module):
         return self.step(batch, "val", epoch)
 
     def training_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.losses['loss'].append(loss.item())
+        loss = torch.stack([x["loss"].item() for x in outputs]).mean()
+        self.losses['loss'].append(loss)
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        self.losses['val_loss'].append(loss.item())
+        loss = torch.stack([x["val_loss"].item() for x in outputs]).mean()
+        self.losses['val_loss'].append(loss)
 
         return {"val_loss": loss}
         
@@ -169,7 +169,9 @@ class LightTrainingModule(nn.Module):
                     batch_size=batch_size,
                     shuffle=shuffle,
                     sampler = sampler,
-                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch, phase)
+                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch, phase),
+                    num_workers=4,
+                    pin_memory=True
         )
         
     def total_steps(self, epochs):
@@ -218,7 +220,7 @@ class SeqClassificationModule(LightTrainingModule):
         except:
           y_probs = self.activation(y_probs) #sigmoid
 
-        return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, y_probs.cpu()
+        return { ("loss" if phase == "train" else f"{phase}_loss"): loss}, y_probs.cpu()
 
 class Seq2SeqModule(LightTrainingModule):
     _dataset_class = Seq2SeqDataset
@@ -315,7 +317,7 @@ class Trainer:
 
   def train(self, epoch):
     self.module.train()
-    self.module.zero_grad()
+    self.module.zero_grad(True)
     outputs = []
 
     for i, batch in enumerate(tqdm(self.train_dl, desc='Training')):
@@ -331,7 +333,7 @@ class Trainer:
         self.opts[0].step()
 
         if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
-      self.module.zero_grad()
+      self.module.zero_grad(True)
 
       self.printer.pprint(**output)
     
@@ -378,9 +380,12 @@ class Trainer:
     timer = Timer()
 
     self.train(epoch)
+
     if self.global_config.swa and (self.global_config.epochs-1) == epoch:
       self.opts[0].swap_swa_sgd()
-    self.evaluate(epoch)
+    
+    if self.global_config.evaluate:
+      self.evaluate(epoch)
     
     self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
 
