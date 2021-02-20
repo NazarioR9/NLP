@@ -127,6 +127,11 @@ class Printer:
     self.update(epoch, losses, score, time)
     self.show()
 
+class BaseContext:
+  def __enter__(self):
+    pass
+  def __exit__(self):
+    pass
 
 class WorkplaceManager:
   def __init__(self, seed, dirs, exts, n_folds=10):
@@ -164,11 +169,11 @@ class WorkplaceManager:
       self._clear_files()    
     self._create_dirs()
 
-  def save_them_all(self, exclude_dirs=[], exclude_exts=[]):
+  def save_them_all(self, path='./', exclude_dirs=[], exclude_exts=[]):
     dirs = ' '.join( list(set(self.dirs).difference(set(exclude_dirs))) )
     exts = ' '.join( list(set(self.exts).difference(set(exclude_exts))) )
 
-    os.system(f'zip -r workplace.zip {exts} {dirs}')
+    os.system(f'zip -r {path}workplace.zip {exts} {dirs}')
 
 
 

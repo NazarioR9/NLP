@@ -133,14 +133,14 @@ class LightTrainingModule(nn.Module):
         return self.step(batch, "val", epoch)
 
     def training_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.losses['loss'].append(loss.item())
+        loss = torch.stack([x["loss"].item() for x in outputs]).mean()
+        self.losses['loss'].append(loss)
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        self.losses['val_loss'].append(loss.item())
+        loss = torch.stack([x["val_loss"].item() for x in outputs]).mean()
+        self.losses['val_loss'].append(loss)
 
         return {"val_loss": loss}
         
@@ -229,11 +229,10 @@ class Seq2SeqModule(LightTrainingModule):
     _sampler = SortishSampler
 
     def generate(self, batch):
-      try:  batch.pop('labels')
-      except: pass
-      finally:
-        batch.update({'num_beams': self.global_config.num_beams})
-        return self.model.generate(batch)
+      batch.pop('labels', None)
+      batch.update({'num_beams': self.global_config.num_beams})
+
+      return self.model.generate(batch)
 
     def decode(self, generated):
       return self.tokenizer.batch_decode(
@@ -247,13 +246,7 @@ class Seq2SeqModule(LightTrainingModule):
 
       loss = self.forward(x)['loss']
 
-      return { ("loss" if phase == "train" else f"{phase}_loss"): loss.cpu()}, x
-
-    def validation_step(self, batch, batch_idx, epoch):
-      outputs, x = self.step(batch, "val")
-      decoded = self.decode(self.generate(x))
-
-      return outputs, decoded
+      return { ("loss" if phase == "train" else f"{phase}_loss"): loss}, x
         
     def test_step(self, batch, batch_idx):
       batch = self.move_to_device(batch)
@@ -386,11 +379,9 @@ class Trainer:
     
     if self.global_config.evaluate:
       self.evaluate(epoch)
+      self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
     else:
-      self._save_weights(path=f'models/checkpoint_{epoch}.bin')
-
-    
-    self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
+      self._save_weights(path=f'checkpoints/checkpoint_{self.global_config.fold}-{epoch}.bin')
 
   def finetune_head_one_epoch(self, epoch):
       self.module.freeze()
@@ -424,15 +415,16 @@ class Trainer:
   def _save_weights(self, half_precision=False, path='models/'):
     if os.path.isdir(path): path = os.path.join(path, f'model_{self.fold}.bin')
 
-    print('Saving weights ...')
+    print('Saving weights ...', end='')
     if half_precision: self.module.half() #for fast inference
     torch.save(self.module.state_dict(), path)
     gc.collect()
+    print('done')
 
   def load(self, path='models/'):
     if os.path.isdir(path): path = os.path.join(path, f'model_{self.fold}.bin')
 
-    print('Loading weights ... ')
+    print('Loading weights ... ', end='')
     self.module.load_state_dict(torch.load(path))
     gc.collect()
     print('done')
@@ -446,16 +438,16 @@ class Trainer:
 class TrainerForSeqClassification(Trainer):
   _module_class = SeqClassificationModule
 
-  def save_best_eval(self, path='evals/{}/fold_{}_best_eval'):
+  def save_best_eval(self, path='evals/{}/fold_{}_best_eval.npy'):
     if self.global_config.phase=='train':
-      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'.npy', np.vstack(self.best_eval))
+      np.save(path.format(self.global_config.model_name, self.global_config.fold), np.vstack(self.best_eval))
 
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
 
-  def save_best_eval(self, path='evals/{}/fold_{}_best_eval'):
+  def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
     if self.global_config.phase=='train':
-      file = path.format(self.global_config.model_name, self.global_config.fold)+'.txt'
+      file = path.format(self.global_config.model_name, self.global_config.fold)
       with open(file, 'w') as f:
         for batch in self.best_eval:
           for s in batch:
@@ -466,3 +458,18 @@ class TrainerForSeq2Seq(Trainer):
     return {
       'bleu': calculate_bleu(raw_texts['trg'], decoded)
     }
+
+  def evaluate_generation(self):
+    score = []
+
+    self.load()
+
+    with torch.no_grad():
+      for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
+        _, decoded = self.module.test_step(batch[0], i)
+        score += [ self.get_score(batch, decoded) ]
+
+        self.printer.pprint(**score[-1])
+      score = self.get_mean_score(score)
+    
+    return score
