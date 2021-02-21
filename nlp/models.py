@@ -445,6 +445,28 @@ class TrainerForSeqClassification(Trainer):
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
 
+  def evaluate(self, epoch):
+    self.module.eval()
+
+    with torch.no_grad():
+      score = []
+      outputs = []
+      eval_probs = []
+
+      for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
+        output, _ = self.module.validation_step(batch, i, epoch)
+        outputs.append(output)
+
+        self.printer.pprint(**output)
+
+      self.scores.append({})
+      loss = self.module.validation_epoch_end(outputs)
+      self._check_evaluation_score(loss)
+
+  def _check_evaluation_score(self, loss, best_eval=None):
+    if loss < min(self.losses['val_loss']):
+      self._save_weights()
+
   def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
     if self.global_config.phase=='train':
       file = path.format(self.global_config.model_name, self.global_config.fold)
@@ -471,5 +493,8 @@ class TrainerForSeq2Seq(Trainer):
 
         self.printer.pprint(**score[-1])
       score = self.get_mean_score(score)
+
+    self.printer.pprint(**score)
+    self.best_metric = score[self.metric_name]
     
     return score
