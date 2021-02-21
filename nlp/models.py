@@ -464,7 +464,7 @@ class TrainerForSeq2Seq(Trainer):
       self._check_evaluation_score(loss['val_loss'])
 
   def _check_evaluation_score(self, loss, best_eval=None):
-    if loss < min(self.module.losses['val_loss']):
+    if len(self.module.losses['val_loss'])==0 or loss < min(self.module.losses['val_loss']):
       self._save_weights()
 
   def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
@@ -498,6 +498,6 @@ class TrainerForSeq2Seq(Trainer):
 
     self.printer.pprint(**score)
     self.best_metric = score[self.metric_name]
-    self.best_eval = best_eval
+    self.best_eval = eval_probs
     
     return score
