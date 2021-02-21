@@ -133,14 +133,14 @@ class LightTrainingModule(nn.Module):
         return self.step(batch, "val", epoch)
 
     def training_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["loss"].item() for x in outputs]).mean()
-        self.losses['loss'].append(loss)
+        loss = torch.stack([x["loss"] for x in outputs]).mean()
+        self.losses['loss'].append(loss.item())
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["val_loss"].item() for x in outputs]).mean()
-        self.losses['val_loss'].append(loss)
+        loss = torch.stack([x["val_loss"] for x in outputs]).mean()
+        self.losses['val_loss'].append(loss.item())
 
         return {"val_loss": loss}
         
