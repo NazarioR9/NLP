@@ -483,6 +483,7 @@ class TrainerForSeq2Seq(Trainer):
 
   def evaluate_generation(self):
     score = []
+    eval_probs = []
 
     self.load()
 
@@ -490,11 +491,13 @@ class TrainerForSeq2Seq(Trainer):
       for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
         _, decoded = self.module.test_step(batch[0], i)
         score += [ self.get_score(batch, decoded) ]
+        eval_probs.append(self._detach(decoded))
 
         self.printer.pprint(**score[-1])
       score = self.get_mean_score(score)
 
     self.printer.pprint(**score)
     self.best_metric = score[self.metric_name]
+    self.best_eval = best_eval
     
     return score
