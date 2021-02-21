@@ -125,7 +125,7 @@ class Seq2SeqCollator(BaseFastCollator):
             trg_pad = self._get_max_pad(batch[:,-1])
 
             trg = batch[:,1].tolist()
-            raw_texts = {'src': src, 'trg': trg}
+            raw_texts = {'src': [[x] for x in src], 'trg': [[x] for x in trg]}
 
             if hasattr(self.tokenizer, "prepare_seq2seq_batch"):
                 batch = self.encode(src, trg, src_pad, trg_pad)

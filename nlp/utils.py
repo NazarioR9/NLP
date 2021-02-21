@@ -33,7 +33,7 @@ def calculate_bleu(refs_lns, output_lns, **kwargs):
   From HF:
   https://github.com/huggingface/transformers/blob/61443cd7d917ef323a799ee27bb4abc4344f0d11/examples/seq2seq/utils.py#L75
   """
-  return round(corpus_bleu(output_lns, [refs_lns], **kwargs).score, 4)
+  return round(corpus_bleu(output_lns, refs_lns, **kwargs).score, 4)
   
 def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
   log = log_loss(ytrue, y_pred, labels=labels)

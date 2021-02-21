@@ -133,14 +133,14 @@ class LightTrainingModule(nn.Module):
         return self.step(batch, "val", epoch)
 
     def training_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.losses['loss'].append(loss.item())
+        loss = np.mean([x["loss"].item() for x in outputs])
+        self.losses['loss'].append(loss)
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
-        loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        self.losses['val_loss'].append(loss.item())
+        loss = np.mean([x["val_loss"].item() for x in outputs])
+        self.losses['val_loss'].append(loss)
 
         return {"val_loss": loss}
         
@@ -446,7 +446,7 @@ class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
 
   def check_evaluation_score(self, value, best_eval=None):
-    if len(self.module.losses['val_loss'])==0 or value < min(self.module.losses['val_loss']):
+    if value <= min(self.module.losses['val_loss']):
       self.save_weights()
 
   def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
@@ -496,7 +496,7 @@ class TrainerForSeq2Seq(Trainer):
         self.printer.pprint(**score[-1])
       score = self.get_mean_score(score)
 
-    self.printer.pprint(**score)
+    print(score)
     self.best_metric = score[self.metric_name]
     self.best_eval = eval_probs
     
