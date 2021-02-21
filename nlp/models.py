@@ -355,7 +355,7 @@ class Trainer:
       score = self.get_mean_score(score)
       self.scores.append(score)
       self.module.validation_epoch_end(outputs)
-      self._check_evaluation_score(score[self.metric_name], eval_probs)
+      self.check_evaluation_score(score[self.metric_name], eval_probs)
     
   def predict(self):
     if self.probs is None:
@@ -381,7 +381,7 @@ class Trainer:
       self.evaluate(epoch)
       self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
     else:
-      self._save_weights(path=f'checkpoints/checkpoint_{self.global_config.fold}-{epoch}.bin')
+      self.save_weights(path=f'checkpoints/checkpoint_{self.global_config.fold}-{epoch}.bin')
 
   def finetune_head_one_epoch(self, epoch):
       self.module.freeze()
@@ -412,7 +412,7 @@ class Trainer:
     keys = scores[0].keys()
     return {key:np.mean([score[key] for score in scores]) for key in keys}
 
-  def _save_weights(self, half_precision=False, path='models/'):
+  def save_weights(self, half_precision=False, path='models/'):
     if os.path.isdir(path): path = os.path.join(path, f'model_{self.fold}.bin')
 
     print('Saving weights ...', end='')
@@ -429,11 +429,11 @@ class Trainer:
     gc.collect()
     print('done')
 
-  def _check_evaluation_score(self, metric, best_eval=None):
-    if metric > self.best_metric:
-      self.best_metric = metric
+  def check_evaluation_score(self, value, best_eval=None):
+    if value > self.best_metric:
+      self.best_metric = value
       self.best_eval = best_eval
-      self._save_weights()
+      self.save_weights()
 
 class TrainerForSeqClassification(Trainer):
   _module_class = SeqClassificationModule
@@ -444,6 +444,24 @@ class TrainerForSeqClassification(Trainer):
 
 class TrainerForSeq2Seq(Trainer):
   _module_class = Seq2SeqModule
+
+  def check_evaluation_score(self, value, best_eval=None):
+    if len(self.module.losses['val_loss'])==0 or value < min(self.module.losses['val_loss']):
+      self.save_weights()
+
+  def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
+    if self.global_config.phase=='train':
+      file = path.format(self.global_config.model_name, self.global_config.fold)
+      with open(file, 'w') as f:
+        for batch in self.best_eval:
+          for s in batch:
+            f.write(s+'\n')
+
+  def get_score(self, batch, decoded):
+    _, raw_texts = batch
+    return {
+      'bleu': calculate_bleu(raw_texts['trg'], decoded)
+    }
 
   def evaluate(self, epoch):
     self.module.eval()
@@ -461,25 +479,7 @@ class TrainerForSeq2Seq(Trainer):
 
       self.scores.append({})
       loss = self.module.validation_epoch_end(outputs)
-      self._check_evaluation_score(loss['val_loss'])
-
-  def _check_evaluation_score(self, loss, best_eval=None):
-    if len(self.module.losses['val_loss'])==0 or loss < min(self.module.losses['val_loss']):
-      self._save_weights()
-
-  def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
-    if self.global_config.phase=='train':
-      file = path.format(self.global_config.model_name, self.global_config.fold)
-      with open(file, 'w') as f:
-        for batch in self.best_eval:
-          for s in batch:
-            f.write(s+'\n')
-
-  def get_score(self, batch, decoded):
-    _, raw_texts = batch
-    return {
-      'bleu': calculate_bleu(raw_texts['trg'], decoded)
-    }
+      self.check_evaluation_score(loss['val_loss'])
 
   def evaluate_generation(self):
     score = []
