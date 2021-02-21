@@ -461,10 +461,10 @@ class TrainerForSeq2Seq(Trainer):
 
       self.scores.append({})
       loss = self.module.validation_epoch_end(outputs)
-      self._check_evaluation_score(loss)
+      self._check_evaluation_score(loss['val_loss'])
 
   def _check_evaluation_score(self, loss, best_eval=None):
-    if loss < min(self.losses['val_loss']):
+    if loss < min(self.module.losses['val_loss']):
       self._save_weights()
 
   def save_best_eval(self, path='evals/{}/fold_{}_best_eval.txt'):
@@ -485,7 +485,7 @@ class TrainerForSeq2Seq(Trainer):
     score = []
     eval_probs = []
 
-    self.load()
+    #self.load()
 
     with torch.no_grad():
       for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
