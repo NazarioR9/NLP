@@ -70,7 +70,17 @@ class BaseTransformer(nn.Module):
 
     x = self.l0(self.low_dropout(x))
     x = torch.tanh(x)
-    x = self.classifier(self.high_dropout(x))
+
+    try:
+      x = torch.mean(
+          torch.stack(
+              [self.classifier(self.high_dropout(x)) for _ in range(self.global_config.multi_drop_nb)],
+              dim=0,
+          ),
+          dim=0,
+      )
+    except:
+      x = self.classifier(self.high_dropout(x))
 
     return x
 
@@ -148,12 +158,12 @@ class LightTrainingModule(nn.Module):
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
         return DataLoader(
-                    BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
-                    batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
-                    shuffle=shuffle,
-                    collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch),
-		    num_workers=4,
-		    pin_memory=True
+            BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
+            batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
+            shuffle=shuffle,
+            collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch),
+    		    num_workers=4,
+    		    pin_memory=True
         )
         
     def total_steps(self, epochs):
