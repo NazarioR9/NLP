@@ -7,26 +7,23 @@ from sklearn.metrics import log_loss, f1_score, accuracy_score
 from collections import Counter
 from IPython.display import clear_output
 import torch
+import transformers
 from transformers import (
     AutoTokenizer, RobertaTokenizerFast, 
-    BertTokenizerFast, ElectraTokenizerFast
+    BertTokenizerFast, ElectraTokenizerFast,
+    EvalPrediction
 )
 
 def seed_everything(seed):
   print(f'Set seed to {seed}.')
-  random.seed(seed)
-  np.random.seed(seed)
-  torch.manual_seed(seed)
-  if torch.cuda.is_available(): 
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+  transformers.set_seed(seed)
 
 def is_blackbone(n):
   return n.startswith('model')
   
-def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
+def compute_metrics(eval_preds, labels=[0,1,2]):
+  ytrue = eval_preds.label_ids.numpy()
+  y_pred = eval_preds.predictions.numpy()
   log = log_loss(ytrue, y_pred, labels=labels)
   f1 = f1_score(ytrue, y_pred.argmax(1), average='weighted')
   acc = accuracy_score(ytrue, y_pred.argmax(1))
@@ -154,7 +151,7 @@ class WorkplaceManager:
       self._clear_files()    
     self._create_dirs()
 
-
+# TODO: To be refactored
 class CrossValLogger:
   def __init__(self, df, metric_name, n_folds=10, oof_cv = 'cv_score.pkl', path='evals/roberta-base/'):
     assert df.fold.nunique()==n_folds, "Unconsistency between df.n_folds and n_folds"
@@ -185,9 +182,9 @@ class CrossValLogger:
 
   def show_results(self, return_score=False):
     if self.score1 is None:
-      eval_preds = self._retrieve_eval_preds()
       self.score1 = self._load_oof_cv_score() / self.n_folds #oof_cv_scores
-      self.score2 = evaluation(self.df.label.values, eval_preds, labels=self.df.label.unique())[self.metric_name] #ovr_score
+      p = EvalPrediction(predictions=self._retrieve_eval_preds(), label_ids=self.df.label.values)
+      self.score2 = compute_metrics(p, labels=self.df.label.unique())[self.metric_name] #ovr_score
 
     print('OOF_CV_SCORE: {:.5f} | OVR_SCORE: {:.5f}'.format(self.score1, self.score2))
     
