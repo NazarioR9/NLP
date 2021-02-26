@@ -56,8 +56,10 @@ class FastTokCollateFn:
             return_attention_mask=True,
             return_tensors='pt'
         )
+
+        encoded['labels'] = labels
         
-        return encoded, labels
+        return encoded
 
     def _map_to_int(self, x):
         return list(map(int, x))

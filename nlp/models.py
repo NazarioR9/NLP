@@ -16,7 +16,7 @@ from torchcontrib.optim import SWA
 from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
 
 from .activation import Mish
-from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
+from .utils import compute_metrics, is_blackbone, Printer, WorkplaceManager, Timer
 from .data import BaseDataset, FastTokCollateFn
 
 class BaseTransformer(nn.Module):
