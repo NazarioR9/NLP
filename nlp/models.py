@@ -64,7 +64,7 @@ class BaseTransformer(nn.Module):
       for param in child.parameters():
         param.requires_grad = True
 
-  def forward(self, inputs):
+  def forward(self, **inputs):
     outputs = self.model(**inputs)
     x = outputs[0][:, 0, :]
 
