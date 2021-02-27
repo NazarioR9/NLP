@@ -11,6 +11,7 @@ from tqdm.auto import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
 from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
@@ -20,6 +21,7 @@ from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer, i
 from .data import BaseDataset, FastTokCollateFn
 
 import_xla_if_available()
+USE_TPU = is_torch_tpu_available()
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
@@ -102,7 +104,9 @@ class LightTrainingModule(nn.Module):
       self.device = device
 
     def move_to_device(self, x, device):
+      if isinstance(x, dict)
         return {key:val.to(device) for key,val in x.items()}
+      return x.to(device)
 
     def freeze(self):
       self.model.freeze()
@@ -124,7 +128,7 @@ class LightTrainingModule(nn.Module):
 
         loss_key = f"{step_name}_loss"
 
-        return { ("loss" if step_name == "train" else loss_key): loss.cpu()}, y_probs.cpu()
+        return { ("loss" if step_name == "train" else loss_key): loss}, y_probs.detach()
 
     def forward(self, X, *args):
         return self.model(X, *args)
@@ -137,12 +141,16 @@ class LightTrainingModule(nn.Module):
 
     def training_epoch_end(self, outputs: List[dict]):
         loss = torch.stack([x["loss"] for x in outputs]).mean()
+        if USE_TPU:
+          loss = xm.mesh_reduce('loss', loss, np.mean)
         self.losses['loss'].append(loss.item())
 
         return {"train_loss": loss}
 
     def validation_epoch_end(self, outputs: List[dict]):
         loss = torch.stack([x["val_loss"] for x in outputs]).mean()
+        if USE_TPU:
+          loss = xm.mesh_reduce('val_loss', loss, np.mean)
         self.losses['val_loss'].append(loss.item())
 
         return {"val_loss": loss}
@@ -158,12 +166,27 @@ class LightTrainingModule(nn.Module):
 
     def test_dataloader(self):
         return self.create_data_loader(self.global_config.test_df, 'test')
+
+    def _get_sampler(ds, shuffle):
+        if USE_TPU:
+          return DistributedSampler(
+              ds,
+              num_replicas=xm.xrt_world_size(),
+              rank=xm.get_ordinal(),
+              shuffle=shuffle
+            )
+        else:
+          return None
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
+        ds = BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes)
+        sampler = self._get_sampler(ds, shuffle)
+        shuffle = (shuffle and sampler is None)
         return DataLoader(
-            BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
+            ds,
             batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
             shuffle=shuffle,
+            sampler = sampler,
             collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch),
     		    num_workers=4,
     		    pin_memory=True
@@ -186,7 +209,7 @@ class LightTrainingModule(nn.Module):
                     num_training_steps=self.total_steps(epochs or self.global_config.epochs),
         )
         if self.global_config.swa: optimizer = SWA(optimizer, self.global_config.swa_start, self.global_config.swa_freq, self.global_config.swa_lr)
-        return [optimizer], [lr_scheduler]
+        return optimizer, lr_scheduler
 
 class Trainer:
   def __init__(self, global_config, **kwargs):
@@ -210,7 +233,7 @@ class Trainer:
     self.scores = []
 
   def _setup_device(self):
-    if is_torch_tpu_available():
+    if USE_TPU:
       self.device = xm.xla_device()
     elif torch.cuda.is_available():
       self.device = torch.device('cuda:0')
@@ -230,61 +253,83 @@ class Trainer:
     self.module.setup_device(self.device)
 
   def _set_optimizers(self, lr=None, epochs=None):
-    self.opts, scheds = self.module.configure_optimizers(lr, epochs)
-    self.scheduler = scheds[0]
+    self.opt, self.scheduler = self.module.configure_optimizers(lr, epochs)
 
   def _change_lr(self, lr=None):
     lr = lr or self.global_config.lr
 
-    for opt in self.opts:
+    if USE_TPU:
+      lr = lr *xm.xrt_world_size()
+
+    for opt in self.opt:
       for param_group in opt.param_groups:
         param_group['lr'] = lr
 
   def _set_logger(self):
     self.printer = Printer(self.global_config.fold)
 
+  def _optimizer_step(self, step):
+    if (step+1) % self.module.global_config.accumulate_grad_batches == 0:
+        if self.global_config.clip_grad: 
+          nn.utils.clip_grad_norm_(self.module.model.parameters(), self.global_config.max_grad_norm)
+
+        if USE_TPU:
+          xm.optimizer_step(self.opt)
+        else:
+          self.opt.step()
+
+        if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
+      self.module.zero_grad()
+
+  def _swa(epoch):
+    if self.global_config.swa and (self.global_config.epochs-1) == epoch:
+      self.opt.swap_swa_sgd()
+
+  def _get_iterator(dl):
+    if USE_TPU:
+      para_loader = pl.ParallelLoader(dl, [self.device])
+      return para_loader.per_device_loader(dl)
+
+    return dl
+
   def train(self, epoch):
     self.module.train()
     self.module.zero_grad()
+    iterator = self._get_iterator(self.train_dl)
     outputs = []
 
-    for i, batch in enumerate(tqdm(self.train_dl, desc='Training')):
+    for i, batch in enumerate(tqdm(iterator, desc='Training')):
       output, _ = self.module.training_step(batch, i, epoch)
       outputs.append(output)
 
       output['loss'].backward()
 
-      if (i+1) % self.module.global_config.accumulate_grad_batches == 0:
-        if self.global_config.clip_grad: 
-          nn.utils.clip_grad_norm_(self.module.model.parameters(), self.global_config.max_grad_norm)
-
-        self.opts[0].step()
-
-        if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
-      self.module.zero_grad()
+      self._optimizer_step(i)
 
       self.printer.pprint(**output)
     
     self.module.training_epoch_end(outputs)
+    self._swa(epoch)
 
   def evaluate(self, epoch):
     self.module.eval()
+    iterator = self._get_iterator(self.val_dl)
 
     with torch.no_grad():
       score = []
       outputs = []
       eval_probs = []
 
-      for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
+      for i, batch in enumerate(tqdm(iterator, desc='Eval')):
         output, y_probs = self.module.validation_step(batch, i, epoch)
-        y_probs = y_probs.detach().cpu().numpy()      
+        y_probs = y_probs.cpu().numpy()
         score += [ self.get_score(batch, y_probs) ]
         eval_probs.append(y_probs.reshape(-1, self.global_config.n_classes))
         outputs.append(output)
 
         self.printer.pprint(**output)
 
-      score = self.get_mean_score(score)
+      score = self.xm_reduce(self.get_mean_score(score))
       self.scores.append(score)
       self.module.validation_epoch_end(outputs)
       self._check_evaluation_score(score[self.metric_name], score['Logloss'], eval_probs)
@@ -305,8 +350,6 @@ class Trainer:
     timer = Timer()
 
     self.train(epoch)
-    if self.global_config.swa and (self.global_config.epochs-1) == epoch:
-      self.opts[0].swap_swa_sgd()
     self.evaluate(epoch)
     
     self.printer.update_and_show(epoch, self.module.losses, self.scores[epoch], timer.to_string())
@@ -317,7 +360,7 @@ class Trainer:
       self.module.unfreeze()
 
   def fit(self, epochs=None, lr=None, reset_lr=True):
-    epochs = epochs or self.global_config.epochs
+    epochs = epochs if epochs not None else self.global_config.epochs
     add = len(self.scores)
 
     if reset_lr: self._change_lr(lr)
@@ -340,10 +383,18 @@ class Trainer:
     keys = scores[0].keys()
     return {key:np.mean([score[key] for score in scores]) for key in keys}
 
-  def _save_weights(self, half_precision=False, path='models/'):
+  def xm_reduce(self, scores, suffixe='eval'):
+    if USE_TPU:
+      return {key: xm.mesh_reduce(suffixe+key, val, np.mean) for key, val in scores.items()}
+    else:
+      return scores
+
+  def _save_weights(self, path='models/'):
     print('Saving weights ...')
-    if half_precision: self.module.half() #for fast inference
-    torch.save(self.module.state_dict(), f'{path}model_{self.fold}.bin')
+    if USE_TPU:
+      xm.save(self.module.state_dict(), f'{path}model_{self.fold}.bin')
+    else:
+      torch.save(self.module.state_dict(), f'{path}model_{self.fold}.bin')
     gc.collect()
 
   def _check_evaluation_score(self, metric, log_score, best_eval=None):
