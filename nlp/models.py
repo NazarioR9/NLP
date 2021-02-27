@@ -15,13 +15,20 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
 from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
+from transformers import is_torch_tpu_available
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer, import_xla_if_available
 from .data import BaseDataset, FastTokCollateFn
 
-import_xla_if_available()
 USE_TPU = is_torch_tpu_available()
+
+if USE_TPU:
+  import torch_xla
+  import torch_xla.distributed.data_parallel as dp
+  import torch_xla.distributed.parallel_loader as pl
+  import torch_xla.core.xla_model as xm
+  import torch_xla.distributed.xla_multiprocessing as xmp
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
@@ -104,7 +111,7 @@ class LightTrainingModule(nn.Module):
       self.device = device
 
     def move_to_device(self, x, device):
-      if isinstance(x, dict)
+      if isinstance(x, dict):
         return {key:val.to(device) for key,val in x.items()}
       return x.to(device)
 
@@ -279,7 +286,7 @@ class Trainer:
           self.opt.step()
 
         if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
-      self.module.zero_grad()
+    self.module.zero_grad()
 
   def _swa(epoch):
     if self.global_config.swa and (self.global_config.epochs-1) == epoch:
@@ -360,7 +367,7 @@ class Trainer:
       self.module.unfreeze()
 
   def fit(self, epochs=None, lr=None, reset_lr=True):
-    epochs = epochs if epochs not None else self.global_config.epochs
+    epochs = epochs if epochs is not None else self.global_config.epochs
     add = len(self.scores)
 
     if reset_lr: self._change_lr(lr)
