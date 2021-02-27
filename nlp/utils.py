@@ -11,6 +11,15 @@ from transformers import (
     AutoTokenizer, RobertaTokenizerFast, 
     BertTokenizerFast, ElectraTokenizerFast
 )
+from transformers import is_torch_tpu_available
+
+def import_xla_if_available():
+  if is_torch_tpu_available():
+    import torch_xla
+    import torch_xla.distributed.data_parallel as dp
+    import torch_xla.distributed.parallel_loader as pl
+    import torch_xla.core.xla_model as xm
+    import torch_xla.distributed.xla_multiprocessing as xmp
 
 def seed_everything(seed):
   print(f'Set seed to {seed}.')

@@ -16,14 +16,17 @@ from torchcontrib.optim import SWA
 from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
 
 from .activation import Mish
-from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
+from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer, import_xla_if_available
 from .data import BaseDataset, FastTokCollateFn
+
+import_xla_if_available()
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
     super(BaseTransformer, self).__init__()
 
     self.global_config = global_config
+    self.do_md = hasattr(global_config, 'multi_drop_nb')
 
     self._setup_model()
 
@@ -71,7 +74,7 @@ class BaseTransformer(nn.Module):
     x = self.l0(self.low_dropout(x))
     x = torch.tanh(x)
 
-    try:
+    if self.do_md:
       x = torch.mean(
           torch.stack(
               [self.classifier(self.high_dropout(x)) for _ in range(self.global_config.multi_drop_nb)],
@@ -79,7 +82,7 @@ class BaseTransformer(nn.Module):
           ),
           dim=0,
       )
-    except:
+    else:
       x = self.classifier(self.high_dropout(x))
 
     return x
@@ -94,9 +97,9 @@ class LightTrainingModule(nn.Module):
         self.activation = global_config.activation
         self.global_config = global_config
         self.losses = {'loss': [], 'val_loss': []}
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.model.to(self.device)
+    def setup_device(device):
+      self.device = device
 
     def move_to_device(self, x, device):
         return {key:val.to(device) for key,val in x.items()}
@@ -193,6 +196,7 @@ class Trainer:
     self.fold = global_config.fold
 
     self._reset()
+    self._setup_device()
     self._set_module(kwargs)
     self._set_loaders()
     self._set_optimizers()
@@ -205,6 +209,14 @@ class Trainer:
     self.best_eval = []
     self.scores = []
 
+  def _setup_device(self):
+    if is_torch_tpu_available():
+      self.device = xm.xla_device()
+    elif torch.cuda.is_available():
+      self.device = torch.device('cuda:0')
+    else:
+      self.device = 'cpu'
+
   def _set_loaders(self):
     self.train_dl = self.module.train_dataloader()
     self.val_dl = self.module.val_dataloader()
@@ -215,6 +227,7 @@ class Trainer:
       self.module = kwargs['module']
     except:
       self.module = LightTrainingModule(self.global_config)
+    self.module.setup_device(self.device)
 
   def _set_optimizers(self, lr=None, epochs=None):
     self.opts, scheds = self.module.configure_optimizers(lr, epochs)
@@ -229,7 +242,6 @@ class Trainer:
 
   def _set_logger(self):
     self.printer = Printer(self.global_config.fold)
-
 
   def train(self, epoch):
     self.module.train()
