@@ -34,29 +34,29 @@ class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
     super(BaseTransformer, self).__init__()
 
-    self.global_config = global_config
+    self.args = global_config
     self.do_md = hasattr(global_config, 'multi_drop_nb')
 
     self._setup_model()
 
-    self.low_dropout = nn.Dropout(self.global_config.low_dropout)
-    self.high_dropout = nn.Dropout(self.global_config.high_dropout)
+    self.low_dropout = nn.Dropout(self.args.low_dropout)
+    self.high_dropout = nn.Dropout(self.args.high_dropout)
 
     self.l0 = nn.Linear(self.config.hidden_size, self.config.hidden_size)
-    self.classifier = nn.Linear(self.config.hidden_size, self.global_config.n_classes)
+    self.classifier = nn.Linear(self.config.hidden_size, self.args.n_classes)
 
     self._init_weights(self.l0)
     self._init_weights(self.classifier)
 
   def _setup_model(self):
     try:
-      model_name = self.global_config.model_path
+      model_name = self.args.model_path
     except AttributeError:
-      model_name = self.global_config.model_name
+      model_name = self.args.model_name
 
-    self.config = AutoConfig.from_pretrained(self.global_config.config_name)
+    self.config = AutoConfig.from_pretrained(self.args.config_name)
 
-    if self.global_config.pretrained:
+    if self.args.pretrained:
       self.model = AutoModel.from_pretrained(model_name)
     else:
       self.model = AutoModel.from_config(self.config)
@@ -86,7 +86,7 @@ class BaseTransformer(nn.Module):
     if self.do_md:
       x = torch.mean(
           torch.stack(
-              [self.classifier(self.high_dropout(x)) for _ in range(self.global_config.multi_drop_nb)],
+              [self.classifier(self.high_dropout(x)) for _ in range(self.args.multi_drop_nb)],
               dim=0,
           ),
           dim=0,
@@ -104,10 +104,10 @@ class LightTrainingModule(nn.Module):
         self.loss = global_config.loss
         self.loss_name = global_config.loss_name
         self.activation = global_config.activation
-        self.global_config = global_config
+        self.args = global_config
         self.losses = {'loss': [], 'val_loss': []}
 
-    def setup_device(device):
+    def setup_device(self, device):
       self.device = device
 
     def move_to_device(self, x, device):
@@ -166,15 +166,15 @@ class LightTrainingModule(nn.Module):
         return self.step(batch, "test")
     
     def train_dataloader(self):
-        return self.create_data_loader(self.global_config.train_df, shuffle=True)
+        return self.create_data_loader(self.args.train_df, shuffle=True)
 
     def val_dataloader(self):
-        return self.create_data_loader(self.global_config.val_df)
+        return self.create_data_loader(self.args.val_df)
 
     def test_dataloader(self):
-        return self.create_data_loader(self.global_config.test_df, 'test')
+        return self.create_data_loader(self.args.test_df, 'test')
 
-    def _get_sampler(ds, shuffle):
+    def _get_sampler(self, ds, shuffle):
         if USE_TPU:
           return DistributedSampler(
               ds,
@@ -186,21 +186,21 @@ class LightTrainingModule(nn.Module):
           return None
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
-        ds = BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes)
+        ds = BaseDataset(df, task, self.loss_name, c=self.args.n_classes)
         sampler = self._get_sampler(ds, shuffle)
         shuffle = (shuffle and sampler is None)
         return DataLoader(
             ds,
-            batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
+            batch_size=self.args.batch_size,
             shuffle=shuffle,
             sampler = sampler,
-            collate_fn=FastTokCollateFn(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch),
-    		    num_workers=4,
+            collate_fn=FastTokCollateFn(self.model.config, self.args.model_name, self.args.max_tokens, self.args.on_batch),
+    		    num_workers=8 if USE_TPU else 4,
     		    pin_memory=True
         )
         
     def total_steps(self, epochs):
-        return len(self.train_dataloader()) // self.global_config.accumulate_grad_batches * epochs
+        return len(self.train_dataloader()) // self.args.accumulate_grad_batches * epochs
 
     def configure_optimizers(self, lr=None, epochs=None):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
@@ -209,21 +209,22 @@ class LightTrainingModule(nn.Module):
              {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.001},
              {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=lr or self.global_config.lr)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=lr or self.args.lr)
         lr_scheduler = get_linear_schedule_with_warmup(
                     optimizer,
-                    num_warmup_steps=self.global_config.warmup_steps,
-                    num_training_steps=self.total_steps(epochs or self.global_config.epochs),
+                    num_warmup_steps=self.args.warmup_steps,
+                    num_training_steps=self.total_steps(epochs or self.args.epochs),
         )
-        if self.global_config.swa: optimizer = SWA(optimizer, self.global_config.swa_start, self.global_config.swa_freq, self.global_config.swa_lr)
+        if self.args.swa: optimizer = SWA(optimizer, self.args.swa_start, self.args.swa_freq, self.args.swa_lr)
         return optimizer, lr_scheduler
 
 class Trainer:
   def __init__(self, global_config, **kwargs):
 
     self.metric_name = global_config.metric_name
-    self.global_config = global_config
+    self.args = global_config
     self.fold = global_config.fold
+    self.replicas = 1
 
     self._reset()
     self._setup_device()
@@ -242,6 +243,7 @@ class Trainer:
   def _setup_device(self):
     if USE_TPU:
       self.device = xm.xla_device()
+      self.replicas = xm.xrt_world_size()
     elif torch.cuda.is_available():
       self.device = torch.device('cuda:0')
     else:
@@ -252,60 +254,62 @@ class Trainer:
     self.val_dl = self.module.val_dataloader()
     self.test_dl = self.module.test_dataloader()
 
+    self.train_steps = self.args.train_df // self.args.batch_size * self.replicas
+    self.val_steps = self.args.train_df // self.args.batch_size * self.replicas
+    self.test_steps = self.args.train_df // self.args.batch_size * self.replicas
+
   def _set_module(self, kwargs):
     try:
       self.module = kwargs['module']
     except:
-      self.module = LightTrainingModule(self.global_config)
+      self.module = LightTrainingModule(self.args)
     self.module.setup_device(self.device)
+    self.module.to(self.device)
 
   def _set_optimizers(self, lr=None, epochs=None):
     self.opt, self.scheduler = self.module.configure_optimizers(lr, epochs)
 
   def _change_lr(self, lr=None):
-    lr = lr or self.global_config.lr
+    lr = lr or self.args.lr
 
     if USE_TPU:
       lr = lr *xm.xrt_world_size()
 
-    for opt in self.opt:
-      for param_group in opt.param_groups:
-        param_group['lr'] = lr
+    for param_group in self.opt.param_groups:
+      param_group['lr'] = lr
 
   def _set_logger(self):
-    self.printer = Printer(self.global_config.fold)
+    self.printer = Printer(self.args.fold)
 
   def _optimizer_step(self, step):
     if (step+1) % self.module.global_config.accumulate_grad_batches == 0:
-        if self.global_config.clip_grad: 
-          nn.utils.clip_grad_norm_(self.module.model.parameters(), self.global_config.max_grad_norm)
+        if self.args.clip_grad: 
+          nn.utils.clip_grad_norm_(self.module.model.parameters(), self.args.max_grad_norm)
 
         if USE_TPU:
           xm.optimizer_step(self.opt)
         else:
           self.opt.step()
 
-        if self.global_config.scheduler and epoch >= self.global_config.finetune_epochs: self.scheduler.step()
+        if self.args.scheduler and epoch >= self.args.finetune_epochs: self.scheduler.step()
     self.module.zero_grad()
 
   def _swa(epoch):
-    if self.global_config.swa and (self.global_config.epochs-1) == epoch:
+    if self.args.swa and (self.args.epochs-1) == epoch:
       self.opt.swap_swa_sgd()
 
-  def _get_iterator(dl):
+  def _get_iterator(self, dl):
     if USE_TPU:
-      para_loader = pl.ParallelLoader(dl, [self.device])
-      return para_loader.per_device_loader(dl)
+      return  pl.ParallelLoader(dl, [self.device]).per_device_loader(self.device)
 
     return dl
 
   def train(self, epoch):
     self.module.train()
     self.module.zero_grad()
-    iterator = self._get_iterator(self.train_dl)
     outputs = []
 
-    for i, batch in enumerate(tqdm(iterator, desc='Training')):
+    for i, batch in enumerate(tqdm(self._get_iterator(self.train_dl), total=self.train_steps, desc='Training')):
       output, _ = self.module.training_step(batch, i, epoch)
       outputs.append(output)
 
@@ -320,18 +324,17 @@ class Trainer:
 
   def evaluate(self, epoch):
     self.module.eval()
-    iterator = self._get_iterator(self.val_dl)
 
     with torch.no_grad():
       score = []
       outputs = []
       eval_probs = []
 
-      for i, batch in enumerate(tqdm(iterator, desc='Eval')):
+      for i, batch in enumerate(tqdm(self._get_iterator(self.val_dl), total=self.val_steps, desc='Eval')):
         output, y_probs = self.module.validation_step(batch, i, epoch)
         y_probs = y_probs.cpu().numpy()
         score += [ self.get_score(batch, y_probs) ]
-        eval_probs.append(y_probs.reshape(-1, self.global_config.n_classes))
+        eval_probs.append(y_probs.reshape(-1, self.args.n_classes))
         outputs.append(output)
 
         self.printer.pprint(**output)
@@ -367,7 +370,7 @@ class Trainer:
       self.module.unfreeze()
 
   def fit(self, epochs=None, lr=None, reset_lr=True):
-    epochs = epochs if epochs is not None else self.global_config.epochs
+    epochs = epochs if epochs is not None else self.args.epochs
     add = len(self.scores)
 
     if reset_lr: self._change_lr(lr)
@@ -377,14 +380,14 @@ class Trainer:
 
   def finetune(self):
     self.module.freeze()
-    self.fit(self.global_config.finetune_epochs, lr=self.global_config.head_lr)
+    self.fit(self.args.finetune_epochs, lr=self.args.head_lr)
     self.module.unfreeze()
 
   def get_preds(self):
     return self.probs
 
   def get_score(self, batch, y_probs):
-    return evaluation(batch[-1].cpu().numpy(), y_probs, labels=list(range(self.global_config.n_classes)))
+    return evaluation(batch[-1].cpu().numpy(), y_probs, labels=list(range(self.args.n_classes)))
 
   def get_mean_score(self, scores):
     keys = scores[0].keys()
@@ -412,5 +415,5 @@ class Trainer:
       self._save_weights()
 
   def save_best_eval(self, path='evals/{}/fold_{}'):
-    if self.global_config.task=='train':
-      np.save(path.format(self.global_config.model_name, self.global_config.fold)+'_best_eval.npy', np.vstack(self.best_eval))
+    if self.args.task=='train':
+      np.save(path.format(self.args.model_name, self.args.fold)+'_best_eval.npy', np.vstack(self.best_eval))
