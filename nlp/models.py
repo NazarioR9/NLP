@@ -254,9 +254,9 @@ class Trainer:
     self.val_dl = self.module.val_dataloader()
     self.test_dl = self.module.test_dataloader()
 
-    self.train_steps = self.args.train_df // self.args.batch_size * self.replicas
-    self.val_steps = self.args.train_df // self.args.batch_size * self.replicas
-    self.test_steps = self.args.train_df // self.args.batch_size * self.replicas
+    self.train_steps = len(self.args.train_df) // (self.args.batch_size * self.replicas)
+    self.val_steps = len(self.args.val_df) // (self.args.batch_size * self.replicas)
+    self.test_steps = len(self.args.test_df) // (self.args.batch_size * self.replicas)
 
   def _set_module(self, kwargs):
     try:
@@ -282,7 +282,7 @@ class Trainer:
     self.printer = Printer(self.args.fold)
 
   def _optimizer_step(self, step):
-    if (step+1) % self.module.global_config.accumulate_grad_batches == 0:
+    if (step+1) % self.args.accumulate_grad_batches == 0:
         if self.args.clip_grad: 
           nn.utils.clip_grad_norm_(self.module.model.parameters(), self.args.max_grad_norm)
 
