@@ -5,7 +5,7 @@ from torch.nn.functional import one_hot
 from tokenizers import ByteLevelBPETokenizer
 from tokenizers.processors import BertProcessing
 from keras.utils import to_categorical
-from .utils import getTokenizer
+from .utils import getTokenizer, getTokenizerV2
 from .augment import *
 
 class BaseDataset(Dataset):
@@ -72,7 +72,7 @@ class Seq2SeqDataset(BaseDataset):
 
 class BaseFastCollator:
     def __init__(self, model_config, args, phase='train'):
-        self.tokenizer = getTokenizer(model_config, args)
+        self.tokenizer = getTokenizerV2(model_config, args)
         self.max_tokens = args.max_tokens
         self.on_batch = args.on_batch
         self.phase = phase

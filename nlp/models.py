@@ -104,7 +104,7 @@ class LightTrainingModule(nn.Module):
         self.model.to(self.device)
 
     def _setup_tok(self, args):
-      self.tokenizer = getTokenizer(self.model.config, args)
+      self.tokenizer = getTokenizerV2(self.model.config, args)
 
     def use_task_specific_params(self, pars):
       self.model.use_task_specific_params(pars)

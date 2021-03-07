@@ -39,7 +39,11 @@ def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
 
   return {'Logloss': log, 'F1': f1, 'Acc': acc}
 
-def getTokenizer(model_config, args, use_fast=True):
+def getTokenizer(model_config, tok_name, use_fast=True):
+  if tok_name.startswith('.'): use_fast = False
+  return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False, use_fast=use_fast)
+
+def getTokenizerV2(model_config, args, use_fast=True):
   if args.config_name.startswith('.'): use_fast = False
 
   tok_params = {}
