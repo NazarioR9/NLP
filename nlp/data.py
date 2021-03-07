@@ -51,7 +51,7 @@ class FastTokCollateFn:
         encoded = self.tokenizer(
             batch[:,0].tolist(),
             truncation=True,
-            padding=True,
+            padding='max_length',
             max_length=max_pad,
             return_attention_mask=True,
             return_tensors='pt'
