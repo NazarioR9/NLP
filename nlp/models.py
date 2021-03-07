@@ -99,12 +99,12 @@ class LightTrainingModule(nn.Module):
         self.losses = {'loss': [], 'val_loss': []}
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self._setup_tok(global_config.config_name)
+        self._setup_tok(global_config)
 
         self.model.to(self.device)
 
-    def _setup_tok(self, tok_name):
-      self.tokenizer = getTokenizer(self.model.config, tok_name)
+    def _setup_tok(self, args):
+      self.tokenizer = getTokenizer(self.model.config, args)
 
     def use_task_specific_params(self, pars):
       self.model.use_task_specific_params(pars)
@@ -169,7 +169,7 @@ class LightTrainingModule(nn.Module):
                     batch_size=batch_size,
                     shuffle=shuffle,
                     sampler = sampler,
-                    collate_fn=self._collator_class(self.model.config, self.global_config.model_name, self.global_config.max_tokens, self.global_config.on_batch, phase),
+                    collate_fn=self._collator_class(self.model.config, self.global_config, phase),
                     num_workers=4,
                     pin_memory=True
         )

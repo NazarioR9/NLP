@@ -39,9 +39,19 @@ def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
 
   return {'Logloss': log, 'F1': f1, 'Acc': acc}
 
-def getTokenizer(model_config, tok_name, use_fast=True):
-  if tok_name.startswith('.'): use_fast = False
-  return AutoTokenizer.from_pretrained(tok_name, config=model_config, add_prefix_space=False, use_fast=use_fast)
+def getTokenizer(model_config, args, use_fast=True):
+  if args.config_name.startswith('.'): use_fast = False
+
+  tok_params = {}
+  if hasattr(args, 'tok_params'):
+    tok_params = args.tok_params
+
+  tok_params.update({
+    'use_fast':use_fast,
+    'add_prefix_space': False,
+    })
+
+  return AutoTokenizer.from_pretrained(args.config_name, config=model_config, **tok_params)
 
 class EarlyStopping:
   def __init__(self, patience=5, mode='max'):

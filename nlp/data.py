@@ -71,10 +71,10 @@ class Seq2SeqDataset(BaseDataset):
 #########################   TokCollate
 
 class BaseFastCollator:
-    def __init__(self, model_config, tok_name, max_tokens=100, on_batch=False, phase='train'):
-        self.tokenizer = getTokenizer(model_config, tok_name)
-        self.max_tokens = max_tokens
-        self.on_batch = on_batch
+    def __init__(self, model_config, args, phase='train'):
+        self.tokenizer = getTokenizer(model_config, args)
+        self.max_tokens = args.max_tokens
+        self.on_batch = args.on_batch
         self.phase = phase
 
     def __call__(self, batch):
@@ -91,10 +91,10 @@ class BaseFastCollator:
 
         return max_pad
 
-    def _encode(self, texts, max_pad=None, padding=True, return_attention_mask=True):
+    def _encode(self, texts, max_pad=None, padding='max_length', return_attention_mask=True):
         return self.tokenizer(
             texts,
-            truncation=max_pad is not None,
+            truncation=True,
             padding=padding,
             max_length=max_pad,
             return_attention_mask=return_attention_mask,
@@ -146,8 +146,8 @@ class Seq2SeqCollator(BaseFastCollator):
             tgt_texts=trg_texts,
             max_length=max_length,
             max_target_length=max_target_length,
-            padding=True,
-            truncation=self.max_tokens is not None,
+            padding='max_length',
+            truncation=True,
             return_tensors="pt"
         )
 
