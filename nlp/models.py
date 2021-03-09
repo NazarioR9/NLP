@@ -18,6 +18,7 @@ from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
 from .data import BaseDataset, FastTokCollateFn
+from .sampler import SortishSampler
 
 class BaseTransformer(nn.Module):
   def __init__(self, global_config, **kwargs):
@@ -157,10 +158,18 @@ class LightTrainingModule(nn.Module):
         return self.create_data_loader(self.global_config.test_df, 'test')
                 
     def create_data_loader(self, df: pd.DataFrame, task='train', shuffle=False):
+        sampler = None
+        batch_size=self.global_config.batch_size
+
+        if hasattr(self.global_config, 'use_bucketing'):
+          shuffle = False
+          sampler = SortishSampler(df['length'].values.tolist(), batch_size, shuffle)
+
         return DataLoader(
             BaseDataset(df, task, self.loss_name, c=self.global_config.n_classes),
-            batch_size=self.global_config.batch_size if task=='train' else int(0.5*self.global_config.batch_size),
+            batch_size=batch_size,
             shuffle=shuffle,
+            sampler=sampler,
             collate_fn=FastTokCollateFn(self.model.config, self.global_config.config_name, self.global_config.max_tokens, self.global_config.on_batch),
     		    num_workers=4,
     		    pin_memory=True
