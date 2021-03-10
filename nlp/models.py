@@ -161,7 +161,7 @@ class LightTrainingModule(nn.Module):
         sampler = None
         batch_size=self.global_config.batch_size
 
-        if hasattr(self.global_config, 'use_bucketing'):
+        if hasattr(self.global_config, 'use_bucketing') and task!='test':
           sampler = SortishSampler(df['length'].values.tolist(), batch_size, shuffle)
           shuffle = False
 
