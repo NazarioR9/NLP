@@ -232,6 +232,9 @@ class Seq2SeqModule(LightTrainingModule):
       batch.pop('labels', None)
       batch.update({'num_beams': self.global_config.num_beams})
 
+      if hasattr(self.global_config, 'generation_params'):
+        batch.update(self.global_config.generation_params)
+
       return self.model.generate(batch)
 
     def decode(self, generated):
