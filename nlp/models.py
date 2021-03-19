@@ -13,7 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchcontrib.optim import SWA
-from transformers import AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+  AutoConfig, AutoModel, AdamW, get_linear_schedule_with_warmup,
+  T5EncoderModel, MT5EncoderModel
+)
 
 from .activation import Mish
 from .utils import evaluation, is_blackbone, Printer, WorkplaceManager, Timer
