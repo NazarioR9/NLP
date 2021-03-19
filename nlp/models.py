@@ -45,10 +45,17 @@ class BaseTransformer(nn.Module):
 
     self.config = AutoConfig.from_pretrained(self.global_config.config_name)
 
-    if self.global_config.pretrained:
-      self.model = AutoModel.from_pretrained(model_name)
+    if 't5' in model_name:
+      _class = T5EncoderModel
+    elif 'mt5' in model_name:
+      _class = MT5EncoderModel
     else:
-      self.model = AutoModel.from_config(self.config)
+      _class = AutoModel
+
+    if self.global_config.pretrained:
+      self.model = _class.from_pretrained(model_name)
+    else:
+      self.model = _class.from_config(self.config)
 
   def _init_weights(self, layer):
     layer.weight.data.normal_(mean=0.0, std=0.02)
