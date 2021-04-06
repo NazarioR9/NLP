@@ -48,10 +48,10 @@ class BaseTransformer(nn.Module):
 
     self.config = AutoConfig.from_pretrained(self.global_config.config_name)
 
-    if 't5' in model_name:
-      _class = T5EncoderModel
-    elif 'mt5' in model_name:
+    if 'mt5' in model_name:
       _class = MT5EncoderModel
+    elif 't5' in model_name:
+      _class = T5EncoderModel
     else:
       _class = AutoModel
 
