@@ -34,7 +34,7 @@ def calculate_bleu(refs_lns, output_lns, **kwargs):
 
 def calculate_rouge(refs_lns, output_lns, **kwargs):
   rouge = load_metric('rouge')
-  results = rouge.compute(references=refs_lns, predictions=output_lns)
+  results = rouge.compute(references=[x[0] for x in refs_lns], predictions=output_lns)
   return round(results["rouge1"].mid.fmeasure, 4)
 
 def compute_seq2seq_metrics(refs_lns, output_lns, **kwargs):
