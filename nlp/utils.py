@@ -31,7 +31,18 @@ def calculate_bleu(refs_lns, output_lns, **kwargs):
   sacrebleu = load_metric('sacrebleu')
   results = sacrebleu.compute(references=refs_lns, predictions=output_lns)
   return round(results['score'], 4)
-  
+
+def calculate_rouge(refs_lns, output_lns, **kwargs):
+  rouge = load_metric('rouge')
+  results = rouge.compute(references=refs_lns, predictions=output_lns)
+  return round(results["rouge1"].mid.fmeasure, 4)
+
+def compute_seq2seq_metrics(refs_lns, output_lns, **kwargs):
+  bleu = calculate_bleu(refs_lns, output_lns)
+  rouge = calculate_rouge(refs_lns, output_lns)
+
+  return {"bleu": bleu, "rouge": rouge}
+
 def evaluation(ytrue, y_pred, labels=[0,1,2,3]):
   log = log_loss(ytrue, y_pred, labels=labels)
   f1 = f1_score(ytrue, y_pred.argmax(1), average='weighted')

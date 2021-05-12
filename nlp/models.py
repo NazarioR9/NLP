@@ -462,17 +462,13 @@ class TrainerForSeq2Seq(Trainer):
 
   def get_score(self, batch, decoded):
     _, raw_texts = batch
-    return {
-      'bleu': calculate_bleu(raw_texts['trg'], decoded)
-    }
+    return compute_seq2seq_metrics(raw_texts['trg'], decoded)
 
   def evaluate(self, epoch):
     self.module.eval()
 
     with torch.no_grad():
-      score = []
       outputs = []
-      eval_probs = []
 
       for i, batch in enumerate(tqdm(self.val_dl, desc='Eval')):
         output, _ = self.module.validation_step(batch, i, epoch)
